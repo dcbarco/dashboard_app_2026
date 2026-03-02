@@ -1,0 +1,18 @@
+# Streamlit secrets and config
+.streamlit/secrets.toml
+
+# Python virtual environment
+venv/
+.venv/
+env/
+__pycache__/
+*.py[cod]
+*$py.class
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Plotly/Kaleido temp files
+report_*.png
+artes_logo.png

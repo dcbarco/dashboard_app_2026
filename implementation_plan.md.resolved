@@ -1,0 +1,68 @@
+# Tablero Seguimiento Neon V2 — Redesign
+
+Redesign the TABLERO DE SEGUIMIENTO section (lines 1393–1515 of [app.py](file:///c:/Users/CentrodeCiencia/Documents/Proyectos%20Programaci%C3%B3n/Dashboard_tactico_app/app.py)) to match the Neon V2 mockup provided by the user. **No changes to data loading, parsing, or any other section of the dashboard.**
+
+## Proposed Changes
+
+### [MODIFY] [app.py](file:///c:/Users/CentrodeCiencia/Documents/Proyectos%20Programación/Dashboard_tactico_app/app.py)
+
+Replace the visualization block (lines ~1409–1515) with the new layout:
+
+#### New Layout Structure
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│  TABLERO DE SEGUIMIENTO — Métricas Unificadas 2026           │
+├────────────┬─────────────────────────────────────────────────┤
+│            │                                                 │
+│  SEDES     │       RADAR CHART (Plotly Scatterpolar)         │
+│  ESTIMADAS │   Axes: Sedes, Acuerdos, Centros,               │
+│  (OR)      │         Formadores, Beneficiarios               │
+│            │   3 neon-colored polygon traces                 │
+│  ACUERDOS  │                                                 │
+│  COB EST.  ├────────────────────┬────────────────────────────┤
+│  (OR)      │                    │                            │
+│            │  AREA CHART        │  % ACUERDOS COBERTURA      │
+│  ACUERDOS  │  (Plotly Filled)   │  Horizontal neon progress  │
+│  COBERTURA │  - Benef Valid (GN)│  bar with glow effect      │
+│  (CY)      │  - Acuerdos Plat   │  (HTML/CSS)                │
+│            │    (MG)            │                            │
+│  FORMADORES│  - Benef Plat (MG) │                            │
+│  (GN)      │    darker shade   │                            │
+│            │                    │                            │
+│  CENTROS   │                    │                            │
+│  PROY (MG) │                    │                            │
+└────────────┴────────────────────┴────────────────────────────┘
+```
+
+#### Component Details
+
+1. **Left column** (`st.columns([1, 2.5])` → left col):
+   - 5 KPI cards stacked vertically
+   - Each card uses **`border-left: 3px solid {color}`** instead of `border-top`
+   - Colors: OR → OR → CY → GN → MG (top to bottom)
+   - Smaller padding, left-aligned text
+
+2. **Right column top**: Radar/Spider chart (Plotly `Scatterpolar`)
+   - 5 axes: Sedes, Acuerdos, Centros, Formadores, Beneficiarios
+   - Multiple colored traces (OR, CY, GN, MG) with semi-transparent fills
+   - Dark transparent background, matching dashboard theme
+   - Values normalized (0–100%) for comparable display
+
+3. **Right column bottom**: Split into 2 sub-columns
+   - **Left sub**: Area chart showing Beneficiarios Validados, Acuerdos Plataforma, Benef. Plataforma as filled area traces
+   - **Right sub**: Horizontal neon progress bar for `% Acuerdos Cobertura` using HTML/CSS with cyan glow effect
+
+> [!IMPORTANT]  
+> Only lines 1393–1515 are modified. All data loading, parsing, helper functions, and other dashboard sections remain untouched.
+
+## Verification Plan
+
+### Manual Verification
+1. Open `http://localhost:8501` in browser
+2. Scroll to bottom — confirm **TABLERO DE SEGUIMIENTO** section renders
+3. Verify **5 KPI cards** appear stacked on the left with correct values and colors
+4. Verify **radar chart** displays in the top-right with 5 labeled axes
+5. Verify **area chart** renders in the bottom-right with legend
+6. Verify **% progress bar** shows correct percentage with neon glow
+7. Confirm the rest of the dashboard (map, charts, sidebar, dialogs) still works correctly
