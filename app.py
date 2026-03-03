@@ -1028,15 +1028,15 @@ def main():
             with st.form("login_form"):
                 user_input = st.text_input("Usuario", placeholder="Ingresa tu usuario")
                 pwd_input = st.text_input("Contraseña", type="password", placeholder="Ingresa tu contraseña")
-                st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
+                # Ensure the button is independent and clearly visible to the runner
                 submit = st.form_submit_button("🔐  Iniciar Sesión", use_container_width=True, type="primary")
 
-                if submit:
-                    if _check_credentials(user_input, pwd_input):
-                        st.session_state["authenticated"] = True
-                        st.rerun()
-                    else:
-                        st.error("❌ Usuario o contraseña incorrectos", icon="🔒")
+            if submit:
+                if _check_credentials(user_input, pwd_input):
+                    st.session_state["authenticated"] = True
+                    st.rerun()
+                else:
+                    st.error("❌ Usuario o contraseña incorrectos", icon="🔒")
 
             st.markdown(f"<div style='text-align:center;margin-top:20px;font-size:.65rem;"
                         f"color:{TD};letter-spacing:1px;'>ARTES PARA LA PAZ — TABLERO ESTRATÉGICO</div>",
