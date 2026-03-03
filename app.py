@@ -982,6 +982,68 @@ def main():
     ICON_SVG = "data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHZpZXdCb3g9JzAgMCAyNCAyNCcgZmlsbD0nIzg4NkZGRic+PHBhdGggZD0nTTMuNSAxOC40OWw2LTYuMDEgNCA0TDIyIDYuOTJsLTEuNDEtMS40MS03LjA5IDcuOTctNC00TDIgMTcuMDhsMS41IDEuNDF6Jy8+PC9zdmc+"
     st.set_page_config(page_title="Artes Dashboard v4.1", layout="wide", page_icon=ICON_SVG)
     inject_css()
+
+    # ── AUTHENTICATION GATE ─────────────────────────────────────────────────
+    import hashlib, hmac
+
+    def _check_credentials(user, pwd):
+        """Verify credentials against hashed values in secrets (timing-safe)."""
+        try:
+            expected_user = st.secrets["auth"]["username"]
+            expected_hash = st.secrets["auth"]["password_hash"]
+        except Exception:
+            return False
+        user_ok = hmac.compare_digest(user.strip(), expected_user)
+        pwd_hash = hashlib.sha256(pwd.encode()).hexdigest()
+        pwd_ok = hmac.compare_digest(pwd_hash, expected_hash)
+        return user_ok and pwd_ok
+
+    if "authenticated" not in st.session_state:
+        st.session_state["authenticated"] = False
+
+    if not st.session_state["authenticated"]:
+        # ── Hide sidebar on login screen ──
+        st.markdown("""<style>
+            section[data-testid="stSidebar"] { display: none; }
+            header { visibility: hidden; }
+        </style>""", unsafe_allow_html=True)
+
+        # ── Centered Login Card ──
+        st.markdown("<div style='height: 60px'></div>", unsafe_allow_html=True)
+        col_l, col_c, col_r = st.columns([1.2, 2, 1.2])
+        with col_c:
+            st.markdown(f"""<div style='text-align:center;margin-bottom:24px;'>
+                <img src="{LOGO}" width="140" style="margin-bottom:18px;"/>
+                <div style='font-size:1.3rem;font-weight:800;color:#fff;margin-bottom:4px;'>
+                    COMMAND CENTER v4.1</div>
+                <div style='font-size:.78rem;color:{TD};letter-spacing:1.5px;
+                    text-transform:uppercase;'>ACCESO RESTRINGIDO</div>
+            </div>""", unsafe_allow_html=True)
+
+            # Decorative line
+            st.markdown(f"<div style='width:60%;margin:0 auto 28px auto;height:1px;"
+                        f"background:linear-gradient(90deg,transparent,{ACCENT},transparent);'></div>",
+                        unsafe_allow_html=True)
+
+            with st.form("login_form"):
+                user_input = st.text_input("Usuario", placeholder="Ingresa tu usuario")
+                pwd_input = st.text_input("Contraseña", type="password", placeholder="Ingresa tu contraseña")
+                st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
+                submit = st.form_submit_button("🔐  Iniciar Sesión", use_container_width=True, type="primary")
+
+                if submit:
+                    if _check_credentials(user_input, pwd_input):
+                        st.session_state["authenticated"] = True
+                        st.rerun()
+                    else:
+                        st.error("❌ Usuario o contraseña incorrectos", icon="🔒")
+
+            st.markdown(f"<div style='text-align:center;margin-top:20px;font-size:.65rem;"
+                        f"color:{TD};letter-spacing:1px;'>ARTES PARA LA PAZ — TABLERO ESTRATÉGICO</div>",
+                        unsafe_allow_html=True)
+        st.stop()
+
+    # ── LOGOUT BUTTON (will be placed in sidebar later) ──
     dm, da, df_foc, df_af, src, err, met_summary, df_met_nodos = load_data()
 
     # ── SIDEBAR ──
@@ -1021,6 +1083,15 @@ def main():
         st.markdown("<br>", unsafe_allow_html=True)
         # Report download button placeholder — filled at end of main() after all data is ready
         report_placeholder = st.empty()
+
+        # ── LOGOUT ──
+        st.markdown("<br><br>", unsafe_allow_html=True)
+        if st.button("🚪 Cerrar Sesión", use_container_width=True):
+            st.session_state["authenticated"] = False
+            for k in list(st.session_state.keys()):
+                if k.startswith("_pdf_cache_"):
+                    del st.session_state[k]
+            st.rerun()
     # ── METRICS ──
     post  = len(mf[mf["STATUS"]=="POSTULANTE"])
 
