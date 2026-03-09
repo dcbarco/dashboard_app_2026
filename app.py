@@ -827,8 +827,13 @@ def show_detail_ee_impactados(mf_data, df_foc=None):
         search = st.text_input("�", placeholder="Buscar", label_visibility="collapsed", key="search_ee_imp")
     
     if dane_col:
-        impactados_df = mf_data[mf_data["STATUS"].isin(["POSTULANTE", "CONTRATADO"])]
-        covered_danes = set(impactados_df[dane_col].dropna().unique())
+        def _nd(v):
+            if pd.isna(v): return None
+            s = str(v).strip()
+            if s.endswith(".0"): s = s[:-2]
+            return s if s and s.lower() != "nan" else None
+        impactados_df = mf_data[mf_data["HAS_M"] == True]
+        covered_danes = set(impactados_df[dane_col].dropna().apply(_nd).dropna().unique())
         
         # Use FOCALIZACION if available to get EE details
         foc_dane_col = None
@@ -839,7 +844,8 @@ def show_detail_ee_impactados(mf_data, df_foc=None):
                     break
         
         if foc_dane_col:
-            ee_df = df_foc[df_foc[foc_dane_col].isin(covered_danes)].drop_duplicates(subset=[foc_dane_col])
+            df_foc["_DANE_NORM"] = df_foc[foc_dane_col].apply(_nd)
+            ee_df = df_foc[df_foc["_DANE_NORM"].isin(covered_danes)].drop_duplicates(subset=[foc_dane_col])
         else:
             ee_df = mf_data[mf_data[dane_col].isin(covered_danes)].drop_duplicates(subset=[dane_col])
         
@@ -888,9 +894,14 @@ def show_detail_vacantes(mf_data, df_foc=None):
         search = st.text_input("🔍", placeholder="Buscar", label_visibility="collapsed", key="search_vac")
 
     if dane_col:
-        # Covered = DANE codes with at least one POSTULANTE or CONTRATADO
-        impactados_df = mf_data[mf_data["STATUS"].isin(["POSTULANTE", "CONTRATADO"])]
-        covered_danes = set(impactados_df[dane_col].dropna().unique())
+        # Covered = DANE codes where ESTADO is not empty (HAS_M = True)
+        def _nd(v):
+            if pd.isna(v): return None
+            s = str(v).strip()
+            if s.endswith(".0"): s = s[:-2]
+            return s if s and s.lower() != "nan" else None
+        impactados_df = mf_data[mf_data["HAS_M"] == True]
+        covered_danes = set(impactados_df[dane_col].dropna().apply(_nd).dropna().unique())
         
         # Use FOCALIZACION as full universe if available
         foc_dane_col = None
@@ -901,10 +912,11 @@ def show_detail_vacantes(mf_data, df_foc=None):
                     break
         
         if foc_dane_col:
-            all_foc_danes = set(df_foc[foc_dane_col].dropna().unique())
+            all_foc_danes = set(df_foc[foc_dane_col].dropna().apply(_nd).dropna().unique())
             uncovered_danes = all_foc_danes - covered_danes
             # Build table from FOCALIZACION sheet for uncovered EE
-            vac_df = df_foc[df_foc[foc_dane_col].isin(uncovered_danes)].drop_duplicates(subset=[foc_dane_col])
+            df_foc["_DANE_NORM"] = df_foc[foc_dane_col].apply(_nd)
+            vac_df = df_foc[df_foc["_DANE_NORM"].isin(uncovered_danes)].drop_duplicates(subset=[foc_dane_col])
         else:
             # Fallback to DATA_MASTER
             all_danes = mf_data[dane_col].dropna().unique()
@@ -1203,24 +1215,20 @@ def main():
         if foc_dane_col:
             all_foc_danes = set(foc_filtered[foc_dane_col].dropna().apply(_norm_dane_val).dropna().unique())
 
-    # Get covered DANE codes from DATA_MASTER (those with POSTULANTE or CONTRATADO)
+    # EE Impactados = unique DANE codes where ESTADO is not empty (HAS_M = True)
     covered_danes = set()
     if dane_col:
-        impactados_df = mf[mf["STATUS"].isin(["POSTULANTE", "CONTRATADO"])]
+        impactados_df = mf[mf["HAS_M"] == True]
         covered_danes = set(impactados_df[dane_col].dropna().apply(_norm_dane_val).dropna().unique())
 
     if all_foc_danes:
-        # Use FOCALIZACION as the full universe (filtered by nodo/municipio)
-        ee_impacted = len(covered_danes & all_foc_danes)  # intersection
-        uncovered_danes = all_foc_danes - covered_danes
-        vac_criticas = len(uncovered_danes)
+        ee_impacted = len(covered_danes & all_foc_danes)  # only count if DANE also exists in FOCALIZACION
     elif dane_col:
-        # Fallback: use DATA_MASTER's own DANE codes
-        all_danes = set(mf[dane_col].dropna().unique())
         ee_impacted = len(covered_danes)
-        vac_criticas = len(all_danes - covered_danes)
-
+    
+    # Vacantes = Total EE (from FOCALIZACION) - EE Impactados
     actual_total_ee = len(all_foc_danes) if all_foc_danes else dynamic_total_ee
+    vac_criticas = max(actual_total_ee - ee_impacted, 0)
     pct_ee = min(round(ee_impacted / actual_total_ee * 100, 1), 100) if actual_total_ee else 0
     pct_vc = min(round(vac_criticas / actual_total_ee * 100, 1), 100) if actual_total_ee else 0
 
@@ -1397,15 +1405,16 @@ def main():
                     if not _foc_mc:
                         _foc_mc = next((c for c in df_foc.columns if "MUNICIPIO" in c.upper()), None)
                     if _foc_dc and _foc_mc:
-                        # Global covered DANEs (same as dialog: no normalization)
-                        _map_covered = set(mf[mf["STATUS"].isin(["POSTULANTE", "CONTRATADO"])][dane_col].dropna().unique())
-                        # All FOCALIZACION DANEs
-                        _all_foc = set(df_foc[_foc_dc].dropna().unique())
+                        # Global covered DANEs: ESTADO not empty (HAS_M = True), normalized
+                        _map_covered = set(mf[mf["HAS_M"] == True][dane_col].dropna().apply(_norm_dane_val).dropna().unique())
+                        # All FOCALIZACION DANEs, normalized
+                        _all_foc = set(df_foc[_foc_dc].dropna().apply(_norm_dane_val).dropna().unique())
                         # Global uncovered
                         _all_uncovered = _all_foc - _map_covered
 
                         # Per-municipality breakdown
-                        _uncov_df = df_foc[df_foc[_foc_dc].isin(_all_uncovered)].drop_duplicates(subset=[_foc_dc])
+                        df_foc["_DN"] = df_foc[_foc_dc].apply(_norm_dane_val)
+                        _uncov_df = df_foc[df_foc["_DN"].isin(_all_uncovered)].drop_duplicates(subset=[_foc_dc])
                         if not _uncov_df.empty and _foc_mc in _uncov_df.columns:
                             _vc_counts = _uncov_df.groupby(_foc_mc).size().reset_index(name="VAC_CRIT")
                             _vc_counts["MUN"] = _vc_counts[_foc_mc].astype(str).str.strip().str.title()
