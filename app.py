@@ -791,7 +791,8 @@ def show_detail_ee_impactados(mf_data, df_foc=None):
         search = st.text_input("�", placeholder="Buscar", label_visibility="collapsed", key="search_ee_imp")
     
     if dane_col:
-        covered_danes = set(mf_data[mf_data["STATUS"] == "CONTRATADO"][dane_col].dropna().unique())
+        impactados_df = mf_data[mf_data["STATUS"].isin(["POSTULANTE", "CONTRATADO"])]
+        covered_danes = set(impactados_df[dane_col].dropna().unique())
         
         # Use FOCALIZACION if available to get EE details
         foc_dane_col = None
@@ -807,7 +808,7 @@ def show_detail_ee_impactados(mf_data, df_foc=None):
             ee_df = mf_data[mf_data[dane_col].isin(covered_danes)].drop_duplicates(subset=[dane_col])
         
         with c1:
-            st.markdown(f"<div class='kl' style='margin-bottom:8px;color:{ACCENT};'>EE CON AF CONTRATADO — {len(ee_df)} ESTABLECIMIENTOS</div>", unsafe_allow_html=True)
+            st.markdown(f"<div class='kl' style='margin-bottom:8px;color:{ACCENT};'>EE IMPACTADOS — {len(ee_df)} ESTABLECIMIENTOS</div>", unsafe_allow_html=True)
         
         if not ee_df.empty:
             show_dane = foc_dane_col if foc_dane_col else dane_col
@@ -851,8 +852,9 @@ def show_detail_vacantes(mf_data, df_foc=None):
         search = st.text_input("🔍", placeholder="Buscar", label_visibility="collapsed", key="search_vac")
 
     if dane_col:
-        # Covered = DANE codes with at least one CONTRATADO
-        covered_danes = set(mf_data[mf_data["STATUS"] == "CONTRATADO"][dane_col].dropna().unique())
+        # Covered = DANE codes with at least one POSTULANTE or CONTRATADO
+        impactados_df = mf_data[mf_data["STATUS"].isin(["POSTULANTE", "CONTRATADO"])]
+        covered_danes = set(impactados_df[dane_col].dropna().unique())
         
         # Use FOCALIZACION as full universe if available
         foc_dane_col = None
@@ -874,7 +876,7 @@ def show_detail_vacantes(mf_data, df_foc=None):
             vac_df = mf_data[mf_data[dane_col].isin(uncovered_danes)].drop_duplicates(subset=[dane_col])
         
         with c1:
-            st.markdown(f"<div class='kl' style='margin-bottom:8px;color:{MG};'>EE SIN AF CONTRATADO — {len(vac_df)} VACANTES CRÍTICAS</div>", unsafe_allow_html=True)
+            st.markdown(f"<div class='kl' style='margin-bottom:8px;color:{MG};'>EE CON VACANTES — {len(vac_df)} VACANTES CRÍTICAS</div>", unsafe_allow_html=True)
 
         if not vac_df.empty:
             # Find best columns to show
@@ -1013,9 +1015,7 @@ def main():
         col_l, col_c, col_r = st.columns([1.2, 2, 1.2])
         with col_c:
             st.markdown(f"""<div style='text-align:center;margin-bottom:24px;'>
-                <img src="{LOGO}" width="140" style="margin-bottom:18px;"/>
-                <div style='font-size:1.3rem;font-weight:800;color:#fff;margin-bottom:4px;'>
-                    COMMAND CENTER v4.1</div>
+                <img src="{LOGO}" width="220" style="margin-bottom:18px;"/>
                 <div style='font-size:.78rem;color:{TD};letter-spacing:1.5px;
                     text-transform:uppercase;'>ACCESO RESTRINGIDO</div>
             </div>""", unsafe_allow_html=True)
@@ -1130,6 +1130,14 @@ def main():
             dane_col = c
             break
 
+    # --- DYNAMIC TOTAL EE CALCULATION (GLOBAL) ---
+    dynamic_total_ee = TOTAL_EE # Fallback
+    if not df_foc.empty:
+        df_f_d_col = next((c for c in df_foc.columns if "DANE" in c.upper()), None)
+        if df_f_d_col:
+            dynamic_total_ee = len(df_foc[df_f_d_col].dropna().unique())
+    # ---------------------------------------------
+
     # Find DANE column in FOCALIZACION sheet and filter by same NODO/MUNICIPIO
     foc_dane_col = None
     all_foc_danes = set()
@@ -1151,11 +1159,11 @@ def main():
         if foc_dane_col:
             all_foc_danes = set(foc_filtered[foc_dane_col].dropna().unique())
 
-    # Get covered DANE codes from DATA_MASTER (those with CONTRATADO)
+    # Get covered DANE codes from DATA_MASTER (those with POSTULANTE or CONTRATADO)
     covered_danes = set()
     if dane_col:
-        contratados_df = mf[mf["STATUS"] == "CONTRATADO"]
-        covered_danes = set(contratados_df[dane_col].dropna().unique())
+        impactados_df = mf[mf["STATUS"].isin(["POSTULANTE", "CONTRATADO"])]
+        covered_danes = set(impactados_df[dane_col].dropna().unique())
 
     if all_foc_danes:
         # Use FOCALIZACION as the full universe (filtered by nodo/municipio)
@@ -1168,7 +1176,7 @@ def main():
         ee_impacted = len(covered_danes)
         vac_criticas = len(all_danes - covered_danes)
 
-    actual_total_ee = len(all_foc_danes) if all_foc_danes else TOTAL_EE
+    actual_total_ee = len(all_foc_danes) if all_foc_danes else dynamic_total_ee
     pct_ee = min(round(ee_impacted / actual_total_ee * 100, 1), 100) if actual_total_ee else 0
     pct_vc = min(round(vac_criticas / actual_total_ee * 100, 1), 100) if actual_total_ee else 0
 
@@ -1296,23 +1304,52 @@ def main():
             s_vac = st.session_state.get("tog_v", True)
 
             if not geo.empty:
+                # Helper to normalize DANE to clean string
+                def _norm_dane(v):
+                    if pd.isna(v): return None
+                    s = str(v).strip()
+                    if s.endswith(".0"): s = s[:-2]
+                    return s if s and s.lower() != "nan" else None
+
                 covered_danes = set()
                 if dane_col and dane_col in geo.columns:
-                    covered_danes = set(geo[geo["STATUS"] == "CONTRATADO"][dane_col].dropna().unique())
+                    impact_geo = geo[geo["STATUS"].isin(["POSTULANTE", "CONTRATADO"])]
+                    covered_danes = set(impact_geo[dane_col].dropna().apply(_norm_dane).dropna().unique())
 
                 agg = geo.groupby(["MUN","LAT","LON","NODO"]).agg(
                     TOT=("STATUS","count"),
-                    POS=("STATUS",lambda x:(x=="POSTULANTE").sum()),
+                    POS=("STATUS",lambda x:((x=="POSTULANTE") | (x=="CONTRATADO")).sum()),
                     CON=("STATUS",lambda x:(x=="CONTRATADO").sum()),
                     VAC=("STATUS",lambda x:(x=="VACANTE").sum())
                 ).reset_index()
 
                 if dane_col and dane_col in geo.columns:
-                    vc_by_mun = geo.groupby("MUN").apply(
-                        lambda g: g[dane_col].dropna().apply(lambda d: d not in covered_danes).sum()
-                    ).reset_index(name="VAC_CRIT")
-                    agg = agg.merge(vc_by_mun, on="MUN", how="left")
-                    agg["VAC_CRIT"] = agg["VAC_CRIT"].fillna(0).astype(int)
+                    _map_foc_mun_col = next((c for c in df_foc.columns if "MUNICIPIO" in c.upper()), None)
+                    if foc_dane_col and _map_foc_mun_col and not foc_filtered.empty:
+                        vc_raw = []
+                        for m_name, g in foc_filtered.groupby(_map_foc_mun_col):
+                            foc_danes_norm = set(g[foc_dane_col].dropna().apply(_norm_dane).dropna().unique())
+                            uncovered = foc_danes_norm - covered_danes
+                            vc_raw.append({"MUN": str(m_name).strip().title(), "VAC_CRIT": len(uncovered)})
+                        if vc_raw:
+                            vc_by_mun = pd.DataFrame(vc_raw)
+                            vc_by_mun = vc_by_mun.groupby("MUN")["VAC_CRIT"].sum().reset_index()
+                            agg = agg.merge(vc_by_mun, on="MUN", how="left")
+                            agg["VAC_CRIT"] = agg["VAC_CRIT"].fillna(0).astype(int)
+                        else:
+                            agg["VAC_CRIT"] = 0
+                    else:
+                        vc_raw = []
+                        for m_name, g in geo.groupby("MUN"):
+                            geo_danes_norm = set(g[dane_col].dropna().apply(_norm_dane).dropna().unique())
+                            uncovered = geo_danes_norm - covered_danes
+                            vc_raw.append({"MUN": m_name, "VAC_CRIT": len(uncovered)})
+                        if vc_raw:
+                            vc_by_mun = pd.DataFrame(vc_raw)
+                            agg = agg.merge(vc_by_mun, on="MUN", how="left")
+                            agg["VAC_CRIT"] = agg["VAC_CRIT"].fillna(0).astype(int)
+                        else:
+                            agg["VAC_CRIT"] = 0
                 else:
                     agg["VAC_CRIT"] = agg["VAC"]
 
@@ -1428,7 +1465,7 @@ def main():
 
         # -- BENEFICIARIOS card --
         st.markdown(f"""<div class='dc-sm' style='text-align:center;padding:14px;'>
-            <div class='kl'>📊 BENEFICIARIOS</div>
+            <div class='kl'>📊 Reporte de Asistencias</div>
             <div class='kv' style='font-size:2rem;margin-top:6px;'>{benef:,}</div>
             <div style='color:{TD};font-size:.72rem;'>Total Nacional</div>
         </div>""", unsafe_allow_html=True)
@@ -1443,7 +1480,7 @@ def main():
 
         # -- SESIONES card --
         st.markdown(f"""<div class='dc-sm' style='text-align:center;padding:14px;border-top:2px solid {OR};'>
-            <div class='kl' style='color:{OR};'>📅 SESIONES</div>
+            <div class='kl' style='color:{OR};'>📅 Momentos Pedagógicos</div>
             <div class='kv' style='font-size:2rem;margin-top:6px;color:{OR};'>{sesiones}</div>
             <div style='color:{TD};font-size:.72rem;'>Registros en BD</div>
         </div>""", unsafe_allow_html=True)
@@ -1588,7 +1625,7 @@ def main():
             st.markdown(f"""<div class='kpi-benef'>
                 <div style='display:flex;align-items:center;'>
                     <span class='kpi-benef-dot'></span>
-                    <span class='kl' style='color:{GN};font-size:.62rem;'>BENEFICIARIOS VALIDADOS</span>
+                    <span class='kl' style='color:{GN};font-size:.62rem;'>Beneficiarios en Acuerdos de Cobertura</span>
                 </div>
                 <div class='kv' style='font-size:1.8rem;color:{GN};margin-top:4px;
                     text-shadow:0 0 16px rgba(0,255,128,0.25);'>{_benef_val}</div>
