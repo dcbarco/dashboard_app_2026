@@ -264,8 +264,38 @@ def _proc(dm, da, df_foc, df_af, src, err, met_summary=None, df_met_nodos=None):
         if s.endswith(".0"): s = s[:-2]
         return s if s and s.lower() != "nan" else None
 
+    # ── Extract contratacion summary from raw df_af (before cleanup) ──
+    af_contrat_summary = {}
     if not df_af.empty:
         df_af.columns = df_af.columns.str.strip()
+        # Scan ALL cells (including Unnamed cols) for summary labels
+        all_totals = []  # collect all TOTAL: values found
+        for col_idx, col in enumerate(df_af.columns):
+            if col_idx + 1 >= len(df_af.columns):
+                continue
+            next_col = df_af.columns[col_idx + 1]
+            for row_idx in df_af.index:
+                cell = str(df_af.at[row_idx, col]).strip().upper()
+                if "LEGALIZADOS Y DECLINADOS" in cell:
+                    try:
+                        af_contrat_summary["declinados"] = int(float(df_af.at[row_idx, next_col]))
+                    except: pass
+                elif "LEGALIZADOS Y CONTRATADOS" in cell:
+                    try:
+                        af_contrat_summary["legalizados"] = int(float(df_af.at[row_idx, next_col]))
+                    except: pass
+                elif cell == "TOTAL:":
+                    try:
+                        v = int(float(df_af.at[row_idx, next_col]))
+                        all_totals.append(v)
+                    except: pass
+        # Compute derived values
+        if "legalizados" in af_contrat_summary and "declinados" in af_contrat_summary:
+            af_contrat_summary["total_legal"] = af_contrat_summary["legalizados"] + af_contrat_summary["declinados"]
+        # Resoluciones = the largest TOTAL: found (695 > 595)
+        if all_totals:
+            af_contrat_summary["resoluciones"] = max(all_totals)
+        # Now clean unnamed columns
         df_af = df_af.loc[:, ~df_af.columns.str.startswith("Unnamed")]
         # Find "Estado CONTRATACIÓN" column (column V)
         af_q_col = None
@@ -357,7 +387,7 @@ def _proc(dm, da, df_foc, df_af, src, err, met_summary=None, df_met_nodos=None):
         if "Marca Temporal" in da.columns:
             da["Marca Temporal"] = pd.to_datetime(da["Marca Temporal"], errors="coerce")
             da = da.sort_values("Marca Temporal", ascending=False)
-    return dm, da, df_foc, df_af, src, err, met_summary or {}, df_met_nodos if df_met_nodos is not None else pd.DataFrame()
+    return dm, da, df_foc, df_af, src, err, met_summary or {}, df_met_nodos if df_met_nodos is not None else pd.DataFrame(), af_contrat_summary
 
 def _mock(n=300):
     rng = np.random.default_rng(42); ms = list(COORDS.keys())
@@ -663,6 +693,12 @@ def inject_css():
         animation: kpiBenefPulse 2s infinite;
         margin-right: 5px; vertical-align: middle;
     }}
+
+    /* Details/Summary expandable */
+    details summary {{-webkit-appearance:none;}}
+    details summary::-webkit-details-marker {{display:none;}}
+    details[open] summary .expand-icon {{transform:rotate(90deg);}}
+    details summary:hover {{opacity:0.85;}}
     </style>""", unsafe_allow_html=True)
 
 
@@ -1044,7 +1080,7 @@ def main():
         st.stop()
 
     # ── LOGOUT BUTTON (will be placed in sidebar later) ──
-    dm, da, df_foc, df_af, src, err, met_summary, df_met_nodos = load_data()
+    dm, da, df_foc, df_af, src, err, met_summary, df_met_nodos, af_contrat_summary = load_data()
 
     # ── SIDEBAR ──
     with st.sidebar:
@@ -1142,6 +1178,14 @@ def main():
     foc_dane_col = None
     all_foc_danes = set()
     foc_filtered = df_foc.copy() if not df_foc.empty else pd.DataFrame()
+
+    # Reusable DANE normalizer
+    def _norm_dane_val(v):
+        if pd.isna(v): return None
+        s = str(v).strip()
+        if s.endswith(".0"): s = s[:-2]
+        return s if s and s.lower() != "nan" else None
+
     if not foc_filtered.empty:
         for c in foc_filtered.columns:
             if "DANE" in c.upper():
@@ -1157,13 +1201,13 @@ def main():
             if foc_mun_col:
                 foc_filtered = foc_filtered[foc_filtered[foc_mun_col].astype(str).str.strip() == sel_m.strip()]
         if foc_dane_col:
-            all_foc_danes = set(foc_filtered[foc_dane_col].dropna().unique())
+            all_foc_danes = set(foc_filtered[foc_dane_col].dropna().apply(_norm_dane_val).dropna().unique())
 
     # Get covered DANE codes from DATA_MASTER (those with POSTULANTE or CONTRATADO)
     covered_danes = set()
     if dane_col:
         impactados_df = mf[mf["STATUS"].isin(["POSTULANTE", "CONTRATADO"])]
-        covered_danes = set(impactados_df[dane_col].dropna().unique())
+        covered_danes = set(impactados_df[dane_col].dropna().apply(_norm_dane_val).dropna().unique())
 
     if all_foc_danes:
         # Use FOCALIZACION as the full universe (filtered by nodo/municipio)
@@ -1209,6 +1253,21 @@ def main():
         if st.button("Ver detalle", key="btn_post_detail", use_container_width=True):
             show_detail_postulantes(mf)
     with c2:
+        _af_dec = af_contrat_summary.get("declinados", 0)
+        _af_tot = af_contrat_summary.get("total_legal", contr + _af_dec)
+        _af_res = af_contrat_summary.get("resoluciones", 0)
+        # Build resoluciones badge HTML separately
+        _resol_html = ""
+        if _af_res:
+            _resol_html = (
+                f"<div style='margin-top:10px;background:rgba(136,111,255,0.10);border:1px solid rgba(136,111,255,0.30);"
+                f"border-radius:8px;padding:7px 10px;display:flex;align-items:center;justify-content:space-between;'>"
+                f"<div style='font-size:.48rem;color:{ACCENT};letter-spacing:.3px;line-height:1.3;max-width:65%;"
+                f"text-transform:uppercase;font-weight:600;'>Resoluciones emitidas a<br/>personas que cumplen requisitos</div>"
+                f"<div style='font-family:JetBrains Mono;font-size:1.3rem;font-weight:800;color:{ACCENT};"
+                f"text-shadow:0 0 12px rgba(136,111,255,0.4);'>{_af_res:,}</div>"
+                f"</div>"
+            )
         st.markdown(f"""<div class='dc' style='border-top:3px solid {GN};{_card_h}'>
             <div class='kl' style='color:{GN};'>CONTRATADOS</div>
             <div style='display:flex;align-items:baseline;gap:8px;margin-top:8px;'>
@@ -1218,6 +1277,24 @@ def main():
             <div style='margin-top:8px;height:5px;background:rgba(255,255,255,0.06);border-radius:3px;overflow:hidden;'>
                 <div style='width:{pct_contr}%;height:100%;background:{GN};border-radius:3px;transition:width .4s;'></div>
             </div>
+            <details style='margin-top:10px;'>
+                <summary style='font-size:.6rem;color:{ACCENT};cursor:pointer;letter-spacing:.5px;
+                    list-style:none;display:flex;align-items:center;gap:4px;'>
+                    <span style='font-size:.7rem;'>ℹ️</span> DESGLOSE CONTRATACIÓN
+                </summary>
+                <div style='margin-top:8px;padding:8px 0 0 0;border-top:1px solid rgba(255,255,255,0.06);'>
+                    <div style='display:flex;justify-content:space-between;font-size:.62rem;color:{TD};margin-bottom:4px;'>
+                        <span>Declinados</span>
+                        <span style='font-family:JetBrains Mono;color:{MG};font-weight:700;'>{_af_dec:,}</span>
+                    </div>
+                    <div style='display:flex;justify-content:space-between;font-size:.65rem;color:#fff;font-weight:700;
+                        padding-top:4px;border-top:1px solid rgba(255,255,255,0.06);'>
+                        <span>Total (Leg. + Dec.)</span>
+                        <span style='font-family:JetBrains Mono;'>{_af_tot:,}</span>
+                    </div>
+                </div>
+            </details>
+            {_resol_html}
         </div>""", unsafe_allow_html=True)
         if st.button("Ver detalle", key="btn_contr_detail", use_container_width=True):
             show_detail_contratados(mf, af_filtered if not df_af.empty and "AF_CONTRATADO" in df_af.columns else None)
@@ -1304,18 +1381,6 @@ def main():
             s_vac = st.session_state.get("tog_v", True)
 
             if not geo.empty:
-                # Helper to normalize DANE to clean string
-                def _norm_dane(v):
-                    if pd.isna(v): return None
-                    s = str(v).strip()
-                    if s.endswith(".0"): s = s[:-2]
-                    return s if s and s.lower() != "nan" else None
-
-                covered_danes = set()
-                if dane_col and dane_col in geo.columns:
-                    impact_geo = geo[geo["STATUS"].isin(["POSTULANTE", "CONTRATADO"])]
-                    covered_danes = set(impact_geo[dane_col].dropna().apply(_norm_dane).dropna().unique())
-
                 agg = geo.groupby(["MUN","LAT","LON","NODO"]).agg(
                     TOT=("STATUS","count"),
                     POS=("STATUS",lambda x:((x=="POSTULANTE") | (x=="CONTRATADO")).sum()),
@@ -1323,35 +1388,31 @@ def main():
                     VAC=("STATUS",lambda x:(x=="VACANTE").sum())
                 ).reset_index()
 
-                if dane_col and dane_col in geo.columns:
-                    _map_foc_mun_col = next((c for c in df_foc.columns if "MUNICIPIO" in c.upper()), None)
-                    if foc_dane_col and _map_foc_mun_col and not foc_filtered.empty:
-                        vc_raw = []
-                        for m_name, g in foc_filtered.groupby(_map_foc_mun_col):
-                            foc_danes_norm = set(g[foc_dane_col].dropna().apply(_norm_dane).dropna().unique())
-                            uncovered = foc_danes_norm - covered_danes
-                            vc_raw.append({"MUN": str(m_name).strip().title(), "VAC_CRIT": len(uncovered)})
-                        if vc_raw:
-                            vc_by_mun = pd.DataFrame(vc_raw)
-                            vc_by_mun = vc_by_mun.groupby("MUN")["VAC_CRIT"].sum().reset_index()
-                            agg = agg.merge(vc_by_mun, on="MUN", how="left")
+                # Compute VAC_CRIT per municipality using FOCALIZACION (same logic as dialog)
+                agg["VAC_CRIT"] = 0
+                if dane_col and dane_col in geo.columns and not df_foc.empty:
+                    # Find foc DANE and MUNICIPIO columns
+                    _foc_dc = next((c for c in df_foc.columns if "DANE" in c.upper()), None)
+                    _foc_mc = next((c for c in df_foc.columns if c.strip().upper() == "MUNICIPIO"), None)
+                    if not _foc_mc:
+                        _foc_mc = next((c for c in df_foc.columns if "MUNICIPIO" in c.upper()), None)
+                    if _foc_dc and _foc_mc:
+                        # Global covered DANEs (same as dialog: no normalization)
+                        _map_covered = set(mf[mf["STATUS"].isin(["POSTULANTE", "CONTRATADO"])][dane_col].dropna().unique())
+                        # All FOCALIZACION DANEs
+                        _all_foc = set(df_foc[_foc_dc].dropna().unique())
+                        # Global uncovered
+                        _all_uncovered = _all_foc - _map_covered
+
+                        # Per-municipality breakdown
+                        _uncov_df = df_foc[df_foc[_foc_dc].isin(_all_uncovered)].drop_duplicates(subset=[_foc_dc])
+                        if not _uncov_df.empty and _foc_mc in _uncov_df.columns:
+                            _vc_counts = _uncov_df.groupby(_foc_mc).size().reset_index(name="VAC_CRIT")
+                            _vc_counts["MUN"] = _vc_counts[_foc_mc].astype(str).str.strip().str.title()
+                            _vc_counts = _vc_counts.groupby("MUN")["VAC_CRIT"].sum().reset_index()
+                            agg = agg.drop(columns=["VAC_CRIT"])
+                            agg = agg.merge(_vc_counts[["MUN","VAC_CRIT"]], on="MUN", how="left")
                             agg["VAC_CRIT"] = agg["VAC_CRIT"].fillna(0).astype(int)
-                        else:
-                            agg["VAC_CRIT"] = 0
-                    else:
-                        vc_raw = []
-                        for m_name, g in geo.groupby("MUN"):
-                            geo_danes_norm = set(g[dane_col].dropna().apply(_norm_dane).dropna().unique())
-                            uncovered = geo_danes_norm - covered_danes
-                            vc_raw.append({"MUN": m_name, "VAC_CRIT": len(uncovered)})
-                        if vc_raw:
-                            vc_by_mun = pd.DataFrame(vc_raw)
-                            agg = agg.merge(vc_by_mun, on="MUN", how="left")
-                            agg["VAC_CRIT"] = agg["VAC_CRIT"].fillna(0).astype(int)
-                        else:
-                            agg["VAC_CRIT"] = 0
-                else:
-                    agg["VAC_CRIT"] = agg["VAC"]
 
                 if not af.empty and "Municipio" in af.columns:
                     att_mun = af.groupby(af["Municipio"].str.strip().str.title())["Asistentes"].agg(["sum","count"]).reset_index()
