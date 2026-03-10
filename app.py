@@ -577,7 +577,19 @@ def inject_css():
     st.markdown(f"""<style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;700&display=swap');
 
-    header,#MainMenu,footer {{visibility:hidden;}}
+    #MainMenu,footer {{visibility:hidden;}}
+    [data-testid="stSidebarCollapsedControl"] {{
+        background: {CARD2}!important;
+        border: 1px solid {BDR}!important;
+        border-radius: 0 8px 8px 0!important;
+        border-left: none!important;
+        height: 48px!important; width: 40px!important;
+        top: 20px!important;
+        display: flex!important; align-items: center!important; justify-content: center!important;
+        z-index: 999999!important;
+    }}
+    [data-testid="stSidebarCollapsedControl"] button {{color:{TW}!important;}}
+    [data-testid="stSidebarCollapsedControl"]:hover {{border-color:{ACCENT}!important; background:rgba(136,111,255,0.08)!important;}}
     html,body,[class*="css"] {{font-family:'Inter',sans-serif!important;color:{TW}!important;}}
     .stApp {{background:{BG}!important;}}
     .block-container {{padding:1.2rem 2rem 2rem 2rem!important;max-width:100%!important;}}
