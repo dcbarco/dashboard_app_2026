@@ -25,7 +25,7 @@ MG          = "#FF0080"
 CY          = "#00D4FF"
 OR          = "#FF9F1C"
 LOGO        = "https://ia903209.us.archive.org/35/items/id-general-textura-blanco/ID_General_Textura_Blanco.png"
-META        = 804
+META        = 803
 TOTAL_EE    = 549
 CI_CATS     = ["MÚSICA","DANZA","ESCRITURA CREATIVA","TEATRO","AUDIOVISUAL"]
 
@@ -139,10 +139,12 @@ def load_data():
         except:
             try: dm = conn.read(spreadsheet=URL_M)
             except: pass
-        try: da = conn.read(spreadsheet=URL_A, worksheet="RESPUESTAS_ASISTENCIA")
+        try: da = conn.read(spreadsheet=URL_A, worksheet="ASISTENCIAS")
         except:
-            try: da = conn.read(spreadsheet=URL_A)
-            except: pass
+            try: da = conn.read(spreadsheet=URL_A, worksheet="RESPUESTAS_ASISTENCIA")
+            except:
+                try: da = conn.read(spreadsheet=URL_A)
+                except: pass
         # Load full EE universe from FOCALIZACIONXNODO 2026
         try: df_foc = conn.read(spreadsheet=URL_M, worksheet="FOCALIZACIONXNODO 2026")
         except: pass
@@ -383,10 +385,10 @@ def _proc(dm, da, df_foc, df_af, src, err, met_summary=None, df_met_nodos=None, 
     else:
         dm["Q_CLEAN"] = ""
 
-    # Priority: Q (CONTRATADO from AF) > M (SELECCIONADO) > VACANTE
+    # Priority: Q (VINCULADO from AF) > M (SELECCIONADO) > VACANTE
     dm["STATUS"] = "VACANTE"
     dm.loc[dm["HAS_M"], "STATUS"] = "POSTULANTE"
-    dm.loc[dm["HAS_Q"], "STATUS"] = "CONTRATADO"
+    dm.loc[dm["HAS_Q"], "STATUS"] = "VINCULADO"
     dm["MUN"] = dm["MUNICIPIO"].astype(str).str.strip().str.title()
     coords = dm["MUN"].map(lambda m: COORDS.get(m, (None, None)))
     dm["LAT"] = coords.apply(lambda x: x[0])
@@ -404,8 +406,10 @@ def _proc(dm, da, df_foc, df_af, src, err, met_summary=None, df_met_nodos=None, 
 
     if not da.empty:
         da.columns = da.columns.str.strip()
-        tcol = next((c for c in da.columns if any(k in c.lower() for k in ["asistentes","estudiantes","beneficiarios"])), None)
-        da["Asistentes"] = pd.to_numeric(da[tcol], errors="coerce").fillna(0) if tcol else 1
+        tcol = next((c for c in da.columns if any(k in c.lower() for k in ["asistentes","estudiantes","beneficiarios","asistencias"])), None)
+        da["Asistentes"] = pd.to_numeric(da[tcol], errors="coerce").fillna(0) if tcol else 0
+        if not tcol: # If no numeric column found, Fallback: sessions count as 1 if there's no data
+             da["Asistentes"] = 1
         # Normalize Fase & Estacionalidad
         if "Fase" in da.columns:
             da["Fase"] = da["Fase"].astype(str).str.strip()
@@ -611,6 +615,8 @@ def inject_css():
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;700&display=swap');
 
     #MainMenu,footer {{visibility:hidden;}}
+    header[data-testid="stHeader"] {{background: transparent !important; height: 0px !important; pointer-events: none !important;}}
+    header[data-testid="stHeader"] * {{pointer-events: auto !important;}}
     [data-testid="stSidebarCollapsedControl"] {{
         background: {CARD2}!important;
         border: 1px solid {BDR}!important;
@@ -748,8 +754,8 @@ def inject_css():
 
 
 # ── DIALOGS ─────────────────────────────────────────────────────────────────
-@st.dialog("✅ Detalle de Contratados", width="large")
-def show_detail_contratados(mf_data, df_af_filtered=None):
+@st.dialog("✅ Detalle de Vinculados", width="large")
+def show_detail_vinculados(mf_data, df_af_filtered=None):
     # Use ARTISTAS FORMADORES as primary source (same as the metric card)
     # Fall back to DATA_MASTER cross-reference if AF data is not available
     use_af = (df_af_filtered is not None and not df_af_filtered.empty
@@ -762,7 +768,7 @@ def show_detail_contratados(mf_data, df_af_filtered=None):
 
     c1, c2 = st.columns([2, 1])
     with c1:
-        st.markdown(f"<div class='kl' style='margin-bottom:8px;color:{GN};'>LISTADO COMPLETO — {len(contr_df)} CONTRATADOS</div>", unsafe_allow_html=True)
+        st.markdown(f"<div class='kl' style='margin-bottom:8px;color:{GN};'>LISTADO COMPLETO — {len(contr_df)} VINCULADOS</div>", unsafe_allow_html=True)
     with c2:
         search = st.text_input("🔍", placeholder="Buscar", label_visibility="collapsed", key="search_contr")
 
@@ -856,11 +862,11 @@ def show_detail_contratados(mf_data, df_af_filtered=None):
             color_map={"EE":"#fff","CÉDULA":GN,"DANE":ACCENT,"MUNICIPIO":TD,"NODO":ACCENT,"CENTRO INTERÉS":GN}), unsafe_allow_html=True)
         st.caption(f"Mostrando {len(tbl)} registros")
     else:
-        st.info("No hay contratados aún.")
+        st.info("No hay vinculados aún.")
 
 @st.dialog("🏫 Detalle de EE Impactados", width="large")
 def show_detail_ee_impactados(mf_data, df_foc=None):
-    """Show list of EE that have at least one CONTRATADO."""
+    """Show list of EE that have at least one VINCULADO."""
     dane_col = None
     for c in mf_data.columns:
         if "DANE" in c.upper():
@@ -925,9 +931,9 @@ def show_detail_ee_impactados(mf_data, df_foc=None):
     else:
         st.warning("No se encontró columna DANE.")
 
-@st.dialog("�🚨 Detalle de Vacantes Críticas", width="large")
+@st.dialog("🚨 Detalle de Vacantes Críticas", width="large")
 def show_detail_vacantes(mf_data, df_foc=None):
-    # Vacantes críticas: DANE codes from FOCALIZACION that have NO CONTRATADO in DATA_MASTER
+    # Vacantes críticas: DANE codes from FOCALIZACION that have NO VINCULADO in DATA_MASTER
     dane_col = None
     for c in mf_data.columns:
         if "DANE" in c.upper():
@@ -1005,7 +1011,7 @@ def show_detail_vacantes(mf_data, df_foc=None):
             st.markdown(dark_table(tbl, max_h=500, num_cols=[], color_map=color_map), unsafe_allow_html=True)
             st.caption(f"Mostrando {len(tbl)} registros")
         else:
-            st.success("¡Todas las EE tienen AF contratado! 🎉")
+            st.success("¡Todas las EE tienen AF vinculado! 🎉")
     else:
         with c1:
             st.markdown(f"<div class='kl' style='margin-bottom:8px;color:{MG};'>VACANTES CRÍTICAS</div>", unsafe_allow_html=True)
@@ -1039,19 +1045,19 @@ def show_detail_postulantes(mf_data):
 
 # ── CHART: Nodo Coverage ────────────────────────────────────────────────────
 def nodo_coverage_chart(dm_filtered, h=300):
-    """Horizontal stacked bar: Seleccionados / Contratados / Vacantes per Nodo."""
+    """Horizontal stacked bar: Seleccionados / Vinculados / Vacantes per Nodo."""
     if "NODO" not in dm_filtered.columns or dm_filtered.empty:
         return None
     nd = dm_filtered.groupby("NODO").agg(
         Postulantes=("STATUS", lambda x: (x=="POSTULANTE").sum()),
-        Contratados=("STATUS", lambda x: (x=="CONTRATADO").sum()),
+        Vinculados=("STATUS", lambda x: (x=="VINCULADO").sum()),
         Vacantes=("STATUS", lambda x: (x=="VACANTE").sum())
     ).reset_index()
     nd["_n"] = nd["NODO"].apply(lambda x: int(re.search(r'\d+', str(x)).group()) if re.search(r'\d+', str(x)) else 0)
     nd = nd.sort_values("_n", ascending=True).drop(columns="_n")
     fig = go.Figure()
-    fig.add_trace(go.Bar(y=nd["NODO"], x=nd["Contratados"], name="Contratados",
-        orientation="h", marker_color=GN, text=nd["Contratados"],
+    fig.add_trace(go.Bar(y=nd["NODO"], x=nd["Vinculados"], name="Vinculados",
+        orientation="h", marker_color=GN, text=nd["Vinculados"],
         textposition="inside", textfont=dict(size=10, color="#111")))
     fig.add_trace(go.Bar(y=nd["NODO"], x=nd["Postulantes"], name="Seleccionados",
         orientation="h", marker_color=CY, text=nd["Postulantes"],
@@ -1188,7 +1194,7 @@ def main():
     # ── METRICS ──
     post  = len(mf[mf["STATUS"]=="POSTULANTE"])
 
-    # CONTRATADOS count comes directly from ARTISTAS FORMADORES (source of truth)
+    # VINCULADOS count comes directly from ARTISTAS FORMADORES (source of truth)
     if not df_af.empty and "AF_CONTRATADO" in df_af.columns:
         af_filtered = df_af.copy()
         # Apply same NODO/MUNICIPIO filters to AF data
@@ -1207,15 +1213,30 @@ def main():
             if summary_val > 0:
                 contr = summary_val
     else:
-        contr = len(mf[mf["STATUS"]=="CONTRATADO"])
+        contr = len(mf[mf["STATUS"]=="VINCULADO"])
         if sel_n == "📍 Todos los Nodos" and sel_m == "Todos los Municipios":
             summary_val = af_contrat_summary.get("legalizados", 0)
             if summary_val > 0:
                 contr = summary_val
-
-    post_total = post + contr  # Seleccionados incluyen contratados
+    post_total = post + contr  # Seleccionados incluyen vinculados
     filled = post + contr  # total filled positions (for gauge)
     vac   = len(mf[mf["STATUS"]=="VACANTE"])
+    # Asistencia metrics: Filtered for charts, Global for national cards
+    benef_nac = int(da["Asistentes"].sum()) if not da.empty else 0
+    sesiones_nac = len(da)
+    
+    # EE de mayor impacto a nivel Nacional
+    top_ee_nac, top_num_nac, top_loc_nac = "Sin datos", 0, ""
+    if not da.empty and "EE" in da.columns:
+        g_nac = da.groupby("EE")["Asistentes"].sum().reset_index().sort_values("Asistentes",ascending=False)
+        if not g_nac.empty:
+            top_ee_nac = g_nac.iloc[0]["EE"]
+            top_num_nac = int(g_nac.iloc[0]["Asistentes"])
+            try:
+                r_nac = da[da["EE"]==top_ee_nac].iloc[0]
+                top_loc_nac = f"{r_nac.get('Municipio','')} · {r_nac.get('Nodo','')}"
+            except: pass
+    
     benef = int(af["Asistentes"].sum()) if not af.empty else 0
     sesiones = len(af)
     pct = round(filled/META*100,1) if META else 0
@@ -1331,7 +1352,7 @@ def main():
                 f"</div>"
             )
         st.markdown(f"""<div class='dc' style='border-top:3px solid {GN};{_card_h}'>
-            <div class='kl' style='color:{GN};'>CONTRATADOS</div>
+            <div class='kl' style='color:{GN};'>VINCULADOS</div>
             <div style='display:flex;align-items:baseline;gap:8px;margin-top:8px;'>
                 <div class='kv' style='font-size:2rem;'>{contr}</div>
                 <span style='font-size:.7rem;color:{TD};'>/ {META} AF · {pct_contr}%</span>
@@ -1342,7 +1363,7 @@ def main():
             <details style='margin-top:10px;'>
                 <summary style='font-size:.6rem;color:{ACCENT};cursor:pointer;letter-spacing:.5px;
                     list-style:none;display:flex;align-items:center;gap:4px;'>
-                    <span style='font-size:.7rem;'>ℹ️</span> DESGLOSE CONTRATACIÓN
+                    <span style='font-size:.7rem;'>ℹ️</span> DESGLOSE VINCULACIÓN
                 </summary>
                 <div style='margin-top:8px;padding:8px 0 0 0;border-top:1px solid rgba(255,255,255,0.06);'>
                     <div style='display:flex;justify-content:space-between;font-size:.62rem;color:{TD};margin-bottom:4px;'>
@@ -1359,7 +1380,7 @@ def main():
             {_resol_html}
         </div>""", unsafe_allow_html=True)
         if st.button("Ver detalle", key="btn_contr_detail", use_container_width=True):
-            show_detail_contratados(mf, af_filtered if not df_af.empty and "AF_CONTRATADO" in df_af.columns else None)
+            show_detail_vinculados(mf, af_filtered if not df_af.empty and "AF_CONTRATADO" in df_af.columns else None)
     with c3:
         st.markdown(f"""<div class='dc' style='border-top:3px solid {MG};{_card_h}'>
             <div class='kl' style='color:{MG};'>VACANTES CRÍTICAS</div>
@@ -1445,8 +1466,8 @@ def main():
             if not geo.empty:
                 agg = geo.groupby(["MUN","LAT","LON","NODO"]).agg(
                     TOT=("STATUS","count"),
-                    POS=("STATUS",lambda x:((x=="POSTULANTE") | (x=="CONTRATADO")).sum()),
-                    CON=("STATUS",lambda x:(x=="CONTRATADO").sum()),
+                    POS=("STATUS",lambda x:((x=="POSTULANTE") | (x=="VINCULADO")).sum()),
+                    CON=("STATUS",lambda x:(x=="VINCULADO").sum()),
                     VAC=("STATUS",lambda x:(x=="VACANTE").sum())
                 ).reset_index()
 
@@ -1519,7 +1540,7 @@ def main():
                     <b style='font-size:14px;color:#fff;'>{MUN}</b><br/><span style='color:rgba(232,230,240,0.6);font-size:11px;'>{NODO}</span>
                     <hr style='border:0;border-top:1px solid rgba(255,255,255,0.1);margin:6px 0;'/>
                     <div style='display:flex;justify-content:space-between;'><span>📋 Seleccionados:</span><b>{POS}</b></div>
-                    <div style='display:flex;justify-content:space-between;'><span>✅ Contratados:</span><b>{CON}</b></div>
+                    <div style='display:flex;justify-content:space-between;'><span>✅ Vinculados:</span><b>{CON}</b></div>
                     <div style='display:flex;justify-content:space-between;'><span>🚨 V. Críticas:</span><b>{VAC_CRIT}</b></div>
                     <div style='display:flex;justify-content:space-between;border-top:1px solid rgba(255,255,255,0.05);margin-top:4px;padding-top:4px;'><span>📊 Beneficiarios:</span><b>{BENEF}</b></div>
                 </div>""", "style": {"background": "#0f0f1a", "color": "#fff", "border": f"1px solid {BDR}", "border-radius": "12px"}}
@@ -1548,7 +1569,7 @@ def main():
         with gL:
             st.plotly_chart(single_gauge(post_total, META, CY, "SELECCIONADOS", h=160), use_container_width=True, config={"displayModeBar":False})
         with gR:
-            st.plotly_chart(single_gauge(contr, META, GN, "CONTRATADOS", h=160), use_container_width=True, config={"displayModeBar":False})
+            st.plotly_chart(single_gauge(contr, META, GN, "VINCULADOS", h=160), use_container_width=True, config={"displayModeBar":False})
 
         # Map filter toggles
         st.markdown(f"""<div style='font-family:Inter;font-size:.72rem;font-weight:700;letter-spacing:1.5px;
@@ -1565,14 +1586,14 @@ def main():
                 <div style='font-size:.68rem;font-weight:600;color:{CY};margin-top:4px;letter-spacing:.5px;'>Selec.</div>
             </div>""", unsafe_allow_html=True)
         with fc2:
-            st.toggle("Contratados", value=True, key="tog_c", label_visibility="collapsed")
+            st.toggle("Vinculados", value=True, key="tog_c", label_visibility="collapsed")
             _on_c = st.session_state.get("tog_c", True)
             st.markdown(f"""<div style='text-align:center;margin-top:-8px;opacity:{"1" if _on_c else "0.3"};'>
                 <div style='width:28px;height:28px;border-radius:50%;background:rgba(0,255,128,0.15);border:2px solid {GN};
                     display:inline-flex;align-items:center;justify-content:center;'>
                     <div style='width:10px;height:10px;border-radius:50%;background:{GN};'></div>
                 </div>
-                <div style='font-size:.68rem;font-weight:600;color:{GN};margin-top:4px;letter-spacing:.5px;'>Contr.</div>
+                <div style='font-size:.68rem;font-weight:600;color:{GN};margin-top:4px;letter-spacing:.5px;'>Vinc.</div>
             </div>""", unsafe_allow_html=True)
         with fc3:
             st.toggle("Vacantes", value=True, key="tog_v", label_visibility="collapsed")
@@ -1590,22 +1611,22 @@ def main():
         # -- BENEFICIARIOS card --
         st.markdown(f"""<div class='dc-sm' style='text-align:center;padding:14px;'>
             <div class='kl'>📊 Reporte de Asistencias</div>
-            <div class='kv' style='font-size:2rem;margin-top:6px;'>{benef:,}</div>
+            <div class='kv' style='font-size:2rem;margin-top:6px;'>{benef_nac:,}</div>
             <div style='color:{TD};font-size:.72rem;'>Total Nacional</div>
         </div>""", unsafe_allow_html=True)
 
         # -- EE MAYOR IMPACTO card --
         st.markdown(f"""<div class='dc-sm' style='padding:14px;border-top:2px solid {GN};'>
             <div class='kl' style='color:{GN};'>🏆 EE MAYOR IMPACTO</div>
-            <div style='margin-top:6px;font-size:.78rem;font-weight:700;color:#fff;'>{str(top_ee)[:35]}</div>
-            <div style='font-size:.68rem;color:{TD};margin-top:2px;'>📍 {top_loc}</div>
-            <div style='font-family:JetBrains Mono;font-size:1rem;color:{GN};font-weight:800;margin-top:4px;'>{top_num:,} Benef.</div>
+            <div style='margin-top:6px;font-size:.78rem;font-weight:700;color:#fff;'>{str(top_ee_nac)[:35]}</div>
+            <div style='font-size:.68rem;color:{TD};margin-top:2px;'>📍 {top_loc_nac}</div>
+            <div style='font-family:JetBrains Mono;font-size:1rem;color:{GN};font-weight:800;margin-top:4px;'>{top_num_nac:,} Benef.</div>
         </div>""", unsafe_allow_html=True)
 
         # -- SESIONES card --
         st.markdown(f"""<div class='dc-sm' style='text-align:center;padding:14px;border-top:2px solid {OR};'>
             <div class='kl' style='color:{OR};'>📅 Momentos Pedagógicos</div>
-            <div class='kv' style='font-size:2rem;margin-top:6px;color:{OR};'>{sesiones}</div>
+            <div class='kv' style='font-size:2rem;margin-top:6px;color:{OR};'>{sesiones_nac:,}</div>
             <div style='color:{TD};font-size:.72rem;'>Registros en BD</div>
         </div>""", unsafe_allow_html=True)
 
@@ -1621,17 +1642,17 @@ def main():
     b1, b2 = st.columns(2, gap="medium")
 
     with b1:
-        with st.expander("⚠️ Municipios con Necesidades de Contratación", expanded=True):
+        with st.expander("⚠️ Municipios con Necesidades de Vinculación", expanded=True):
             if vac > 0:
                 vt = mf.groupby(["MUNICIPIO","NODO"]).agg(
                     POSTULANTES=("STATUS",lambda x:(x=="POSTULANTE").sum()),
-                    CONTRATADOS=("STATUS",lambda x:(x=="CONTRATADO").sum()),
+                    VINCULADOS=("STATUS",lambda x:(x=="VINCULADO").sum()),
                     VACANTES=("STATUS",lambda x:(x=="VACANTE").sum())
                 ).reset_index()
                 vt = vt[vt["VACANTES"]>0].sort_values("VACANTES",ascending=False)
                 vt["ESTADO"] = "🔴 Necesita"
-                st.markdown(dark_table(vt, max_h=350, num_cols=["POSTULANTES","CONTRATADOS","VACANTES"],
-                    color_map={"POSTULANTES":CY,"CONTRATADOS":GN,"VACANTES":MG,"MUNICIPIO":"#fff","NODO":ACCENT,"ESTADO":MG}), unsafe_allow_html=True)
+                st.markdown(dark_table(vt, max_h=350, num_cols=["POSTULANTES","VINCULADOS","VACANTES"],
+                    color_map={"POSTULANTES":CY,"VINCULADOS":GN,"VACANTES":MG,"MUNICIPIO":"#fff","NODO":ACCENT,"ESTADO":MG}), unsafe_allow_html=True)
             else:
                 st.success("¡Todo cubierto! 🎉")
 
@@ -1916,7 +1937,7 @@ def main():
     # Build the data dict for the report
     report_kpis = [
         {"label": "SELECCIONADOS",     "value": f"{post_total:,}", "sub": f"/ {META} AF - {pct_post}%", "pct": pct_post},
-        {"label": "CONTRATADOS",       "value": f"{contr:,}",      "sub": f"/ {META} AF - {pct_contr}%", "pct": pct_contr},
+        {"label": "VINCULADOS",       "value": f"{contr:,}",      "sub": f"/ {META} AF - {pct_contr}%", "pct": pct_contr},
         {"label": "VACANTES CRITICAS", "value": f"{vac_criticas:,}", "sub": f"/ {actual_total_ee} EE - {pct_vc}%", "pct": pct_vc},
         {"label": "EE IMPACTADOS",     "value": f"{ee_impacted:,}", "sub": f"/ {actual_total_ee} - {pct_ee}%", "pct": pct_ee},
     ]
