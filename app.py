@@ -147,9 +147,14 @@ def load_data():
         try: df_foc = conn.read(spreadsheet=URL_M, worksheet="FOCALIZACIONXNODO 2026")
         except: pass
         # Load ARTISTAS FORMADORES 2026 (new CONTRATADOS source)
-        try: df_af = conn.read(spreadsheet=URL_AF, worksheet="ARTISTAS FORMADORES 2026")
+        df_af_raw = pd.DataFrame()
+        try:
+            df_af = conn.read(spreadsheet=URL_AF, worksheet="ARTISTAS FORMADORES 2026")
+            df_af_raw = conn.read(spreadsheet=URL_AF, worksheet="ARTISTAS FORMADORES 2026", header=None)
         except:
-            try: df_af = conn.read(spreadsheet=URL_AF)
+            try:
+                df_af = conn.read(spreadsheet=URL_AF)
+                df_af_raw = conn.read(spreadsheet=URL_AF, header=None)
             except: pass
         # Load TABLERO METRICAS UNIFICADAS (placeholder — will use new source later)
         try: df_met_raw = conn.read(spreadsheet=URL_MET, worksheet="TABLERO_METRICAS_UNIFICADAS", header=None)
@@ -247,9 +252,9 @@ def load_data():
         except:
             pass
     
-    return _proc(dm, da, df_foc, df_af, src, err, met_summary, df_met_nodos)
+    return _proc(dm, da, df_foc, df_af, src, err, met_summary, df_met_nodos, df_af_raw)
 
-def _proc(dm, da, df_foc, df_af, src, err, met_summary=None, df_met_nodos=None):
+def _proc(dm, da, df_foc, df_af, src, err, met_summary=None, df_met_nodos=None, df_af_raw=None):
     dm.columns = dm.columns.str.strip()
     dm = dm.loc[:, ~dm.columns.str.startswith("Unnamed")]
 
@@ -266,35 +271,63 @@ def _proc(dm, da, df_foc, df_af, src, err, met_summary=None, df_met_nodos=None):
 
     # ── Extract contratacion summary from raw df_af (before cleanup) ──
     af_contrat_summary = {}
+    
+    # Priority 1: Direct cell access from Row 4, Col AG (index 3, 32) if label matches in AF4
+    if df_af_raw is not None and not df_af_raw.empty:
+        try:
+            # AG is Col 32, AF is Col 31
+            # Check AF4 label
+            label_af4 = str(df_af_raw.iloc[3, 31]).strip().upper() if len(df_af_raw.columns) > 31 else ""
+            if "LEGALIZADOS Y CONTRATADOS" in label_af4 or "CONTRATADOS" in label_af4:
+                val_ag4 = str(df_af_raw.iloc[3, 32]).replace(",","") if len(df_af_raw.columns) > 32 else ""
+                af_contrat_summary["legalizados"] = int(float(val_ag4))
+            
+            # AF5 / AG5 for declinados
+            label_af5 = str(df_af_raw.iloc[4, 31]).strip().upper() if len(df_af_raw.columns) > 31 else ""
+            if "LEGALIZADOS Y DECLINADOS" in label_af5 or "DECLINADOS" in label_af5:
+                val_ag5 = str(df_af_raw.iloc[4, 32]).replace(",","") if len(df_af_raw.columns) > 32 else ""
+                af_contrat_summary["declinados"] = int(float(val_ag5))
+            
+            # AB10 / AC10 for Resoluciones (Total row)
+            # AB is index 27, AC is index 28
+            label_ab10 = str(df_af_raw.iloc[9, 27]).strip().upper() if len(df_af_raw.columns) > 27 else ""
+            if "TOTAL" in label_ab10:
+                val_ac10 = str(df_af_raw.iloc[9, 28]).replace(",","") if len(df_af_raw.columns) > 28 else ""
+                af_contrat_summary["resoluciones"] = int(float(val_ac10))
+        except: pass
+
+    # Priority 2: Label-based scan if direct access failed or partial
     if not df_af.empty:
         df_af.columns = df_af.columns.str.strip()
-        # Scan ALL cells (including Unnamed cols) for summary labels
-        all_totals = []  # collect all TOTAL: values found
+        all_totals = []
         for col_idx, col in enumerate(df_af.columns):
             if col_idx + 1 >= len(df_af.columns):
                 continue
             next_col = df_af.columns[col_idx + 1]
             for row_idx in df_af.index:
                 cell = str(df_af.at[row_idx, col]).strip().upper()
-                if "LEGALIZADOS Y DECLINADOS" in cell:
+                if "LEGALIZADOS Y DECLINADOS" in cell and "declinados" not in af_contrat_summary:
                     try:
-                        af_contrat_summary["declinados"] = int(float(df_af.at[row_idx, next_col]))
+                        v_str = str(df_af.at[row_idx, next_col]).replace(",","")
+                        af_contrat_summary["declinados"] = int(float(v_str))
                     except: pass
-                elif "LEGALIZADOS Y CONTRATADOS" in cell:
+                elif "LEGALIZADOS Y CONTRATADOS" in cell and "legalizados" not in af_contrat_summary:
                     try:
-                        af_contrat_summary["legalizados"] = int(float(df_af.at[row_idx, next_col]))
+                        v_str = str(df_af.at[row_idx, next_col]).replace(",","")
+                        af_contrat_summary["legalizados"] = int(float(v_str))
                     except: pass
                 elif cell == "TOTAL:":
                     try:
-                        v = int(float(df_af.at[row_idx, next_col]))
+                        v_str = str(df_af.at[row_idx, next_col]).replace(",","")
+                        v = int(float(v_str))
                         all_totals.append(v)
                     except: pass
-        # Compute derived values
+        
+        if "resoluciones" not in af_contrat_summary and all_totals:
+            af_contrat_summary["resoluciones"] = max(all_totals)
+        
         if "legalizados" in af_contrat_summary and "declinados" in af_contrat_summary:
             af_contrat_summary["total_legal"] = af_contrat_summary["legalizados"] + af_contrat_summary["declinados"]
-        # Resoluciones = the largest TOTAL: found (695 > 595)
-        if all_totals:
-            af_contrat_summary["resoluciones"] = max(all_totals)
         # Now clean unnamed columns
         df_af = df_af.loc[:, ~df_af.columns.str.startswith("Unnamed")]
         # Find "Estado CONTRATACIÓN" column (column V)
@@ -1168,8 +1201,17 @@ def main():
             if af_mun_col:
                 af_filtered = af_filtered[af_filtered[af_mun_col].astype(str).str.strip() == sel_m.strip()]
         contr = int(af_filtered["AF_CONTRATADO"].sum())
+        # Priority: use extracted summary value (598) if no filters and summary exists
+        if sel_n == "📍 Todos los Nodos" and sel_m == "Todos los Municipios":
+            summary_val = af_contrat_summary.get("legalizados", 0)
+            if summary_val > 0:
+                contr = summary_val
     else:
         contr = len(mf[mf["STATUS"]=="CONTRATADO"])
+        if sel_n == "📍 Todos los Nodos" and sel_m == "Todos los Municipios":
+            summary_val = af_contrat_summary.get("legalizados", 0)
+            if summary_val > 0:
+                contr = summary_val
 
     post_total = post + contr  # Seleccionados incluyen contratados
     filled = post + contr  # total filled positions (for gauge)
