@@ -279,13 +279,13 @@ def _proc(dm, da, df_foc, df_af, src, err, met_summary=None, df_met_nodos=None, 
         try:
             # AG is Col 32, AF is Col 31
             # Check AF4 label
-            label_af4 = str(df_af_raw.iloc[3, 31]).strip().upper() if len(df_af_raw.columns) > 31 else ""
+            label_af4 = str(df_af_raw.iloc[3, 31]).replace('\n', ' ').replace('\r', '').strip().upper() if len(df_af_raw.columns) > 31 else ""
             if "LEGALIZADOS Y CONTRATADOS" in label_af4 or "CONTRATADOS" in label_af4:
                 val_ag4 = str(df_af_raw.iloc[3, 32]).replace(",","") if len(df_af_raw.columns) > 32 else ""
                 af_contrat_summary["legalizados"] = int(float(val_ag4))
             
             # AF5 / AG5 for declinados
-            label_af5 = str(df_af_raw.iloc[4, 31]).strip().upper() if len(df_af_raw.columns) > 31 else ""
+            label_af5 = str(df_af_raw.iloc[4, 31]).replace('\n', ' ').replace('\r', '').strip().upper() if len(df_af_raw.columns) > 31 else ""
             if "LEGALIZADOS Y DECLINADOS" in label_af5 or "DECLINADOS" in label_af5:
                 val_ag5 = str(df_af_raw.iloc[4, 32]).replace(",","") if len(df_af_raw.columns) > 32 else ""
                 af_contrat_summary["declinados"] = int(float(val_ag5))
@@ -307,7 +307,7 @@ def _proc(dm, da, df_foc, df_af, src, err, met_summary=None, df_met_nodos=None, 
                 continue
             next_col = df_af.columns[col_idx + 1]
             for row_idx in df_af.index:
-                cell = str(df_af.at[row_idx, col]).strip().upper()
+                cell = str(df_af.at[row_idx, col]).replace('\n', ' ').replace('\r', '').strip().upper()
                 if "LEGALIZADOS Y DECLINADOS" in cell and "declinados" not in af_contrat_summary:
                     try:
                         v_str = str(df_af.at[row_idx, next_col]).replace(",","")
@@ -422,7 +422,7 @@ def _proc(dm, da, df_foc, df_af, src, err, met_summary=None, df_met_nodos=None, 
         
         # Pre-process time for the pulse feed
         if "Marca Temporal" in da.columns:
-            da["Marca Temporal"] = pd.to_datetime(da["Marca Temporal"], errors="coerce")
+            da["Marca Temporal"] = pd.to_datetime(da["Marca Temporal"], dayfirst=True, errors="coerce")
             da = da.sort_values("Marca Temporal", ascending=False)
     return dm, da, df_foc, df_af, src, err, met_summary or {}, df_met_nodos if df_met_nodos is not None else pd.DataFrame(), af_contrat_summary
 
@@ -667,11 +667,14 @@ def inject_css():
     /* Pulse Carousel */
     .pulse-wrap {{height:480px;overflow:hidden;position:relative;
         mask-image:linear-gradient(to bottom,transparent 0%,black 6%,black 94%,transparent 100%);
-        -webkit-mask-image:linear-gradient(to bottom,transparent 0%,black 6%,black 94%,transparent 100%);}}
+        -webkit-mask-image:linear-gradient(to bottom,transparent 0%,black 6%,black 94%,transparent 100%);
+        cursor:grab;}}
+    .pulse-wrap:active {{cursor:grabbing;}}
+    .pulse-wrap.is-dragging .pulse-track {{animation-play-state:paused!important;}}
     .pulse-track {{display:flex;flex-direction:column;gap:10px;animation:scrollUp 120s linear infinite;}}
     .pulse-track:hover {{animation-play-state:paused;}}
     @keyframes scrollUp {{0%{{transform:translateY(0)}}100%{{transform:translateY(-50%)}}}}
-    .pc {{background:{CARD2};border-left:3px solid {ACCENT};padding:12px 14px;border-radius:6px;flex-shrink:0;transition:background .2s;display:flex;align-items:flex-start;justify-content:space-between;gap:8px;}}
+    .pc {{background:{CARD2};border-left:3px solid {ACCENT};padding:12px 14px;border-radius:6px;flex-shrink:0;transition:background .3s,border-color .3s,box-shadow .3s;display:flex;align-items:flex-start;justify-content:space-between;gap:8px;}}
     .pc:hover {{background:rgba(136,111,255,0.08);}}
     .pc-body {{flex:1;min-width:0;}}
     .pc-t {{font-size:.62rem;color:{TD};margin-bottom:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}}
@@ -754,7 +757,7 @@ def inject_css():
 
 
 # ── DIALOGS ─────────────────────────────────────────────────────────────────
-@st.dialog("✅ Detalle de Vinculados", width="large")
+@st.dialog("✅ Detalle de AF Vinculados", width="large")
 def show_detail_vinculados(mf_data, df_af_filtered=None):
     # Use ARTISTAS FORMADORES as primary source (same as the metric card)
     # Fall back to DATA_MASTER cross-reference if AF data is not available
@@ -864,7 +867,7 @@ def show_detail_vinculados(mf_data, df_af_filtered=None):
     else:
         st.info("No hay vinculados aún.")
 
-@st.dialog("🏫 Detalle de EE Impactados", width="large")
+@st.dialog("🏫 Detalle de EE con AF Seleccionados", width="large")
 def show_detail_ee_impactados(mf_data, df_foc=None):
     """Show list of EE that have at least one VINCULADO."""
     dane_col = None
@@ -931,7 +934,7 @@ def show_detail_ee_impactados(mf_data, df_foc=None):
     else:
         st.warning("No se encontró columna DANE.")
 
-@st.dialog("🚨 Detalle de Vacantes Críticas", width="large")
+@st.dialog("🚨 Detalle de EE Vacantes", width="large")
 def show_detail_vacantes(mf_data, df_foc=None):
     # Vacantes críticas: DANE codes from FOCALIZACION that have NO VINCULADO in DATA_MASTER
     dane_col = None
@@ -975,7 +978,7 @@ def show_detail_vacantes(mf_data, df_foc=None):
             vac_df = mf_data[mf_data[dane_col].isin(uncovered_danes)].drop_duplicates(subset=[dane_col])
         
         with c1:
-            st.markdown(f"<div class='kl' style='margin-bottom:8px;color:{MG};'>EE CON VACANTES — {len(vac_df)} VACANTES CRÍTICAS</div>", unsafe_allow_html=True)
+            st.markdown(f"<div class='kl' style='margin-bottom:8px;color:{MG};'>EE CON VACANTES — {len(vac_df)} VACANTES</div>", unsafe_allow_html=True)
 
         if not vac_df.empty:
             # Find best columns to show
@@ -1014,10 +1017,10 @@ def show_detail_vacantes(mf_data, df_foc=None):
             st.success("¡Todas las EE tienen AF vinculado! 🎉")
     else:
         with c1:
-            st.markdown(f"<div class='kl' style='margin-bottom:8px;color:{MG};'>VACANTES CRÍTICAS</div>", unsafe_allow_html=True)
+            st.markdown(f"<div class='kl' style='margin-bottom:8px;color:{MG};'>EE VACANTES</div>", unsafe_allow_html=True)
         st.warning("Columna CODIGO DANE no encontrada")
 
-@st.dialog("📋 Detalle de Seleccionados", width="large")
+@st.dialog("📋 Detalle de AF Seleccionados", width="large")
 def show_detail_postulantes(mf_data):
     post_df = mf_data[mf_data["STATUS"]=="POSTULANTE"]
     
@@ -1169,6 +1172,8 @@ def main():
         sel_m = st.selectbox("MUNICIPIO", muns, label_visibility="collapsed")
         if sel_m != "Todos los Municipios":
             mf = mf[mf["MUNICIPIO"]==sel_m]
+            if not af.empty and "Municipio" in af.columns:
+                af = af[af["Municipio"].astype(str).str.strip().str.upper()==sel_m.strip().upper()]
 
         st.markdown("<br>", unsafe_allow_html=True)
         if st.button("🔄 Actualizar Datos", use_container_width=True, type="primary"):
@@ -1221,24 +1226,21 @@ def main():
     post_total = post + contr  # Seleccionados incluyen vinculados
     filled = post + contr  # total filled positions (for gauge)
     vac   = len(mf[mf["STATUS"]=="VACANTE"])
-    # Asistencia metrics: Filtered for charts, Global for national cards
-    benef_nac = int(da["Asistentes"].sum()) if not da.empty else 0
-    sesiones_nac = len(da)
-    
-    # EE de mayor impacto a nivel Nacional
-    top_ee_nac, top_num_nac, top_loc_nac = "Sin datos", 0, ""
-    if not da.empty and "EE" in da.columns:
-        g_nac = da.groupby("EE")["Asistentes"].sum().reset_index().sort_values("Asistentes",ascending=False)
-        if not g_nac.empty:
-            top_ee_nac = g_nac.iloc[0]["EE"]
-            top_num_nac = int(g_nac.iloc[0]["Asistentes"])
-            try:
-                r_nac = da[da["EE"]==top_ee_nac].iloc[0]
-                top_loc_nac = f"{r_nac.get('Municipio','')} · {r_nac.get('Nodo','')}"
-            except: pass
-    
+    # Asistencia metrics: Filtered by NODO/MUNICIPIO
     benef = int(af["Asistentes"].sum()) if not af.empty else 0
     sesiones = len(af)
+    
+    # EE de mayor impacto (Filtrado)
+    top_ee, top_num, top_loc = "Sin datos", 0, ""
+    if not af.empty and "EE" in af.columns:
+        g = af.groupby("EE")["Asistentes"].sum().reset_index().sort_values("Asistentes",ascending=False)
+        if not g.empty:
+            top_ee = g.iloc[0]["EE"]
+            top_num = int(g.iloc[0]["Asistentes"])
+            try:
+                r = af[af["EE"]==top_ee].iloc[0]
+                top_loc = f"{r.get('Municipio','')} · {r.get('Nodo','')}"
+            except: pass
     pct = round(filled/META*100,1) if META else 0
     pct_post = min(round(post_total/META*100,1), 100) if META else 0
     pct_contr = min(round(contr/META*100,1), 100) if META else 0
@@ -1324,7 +1326,7 @@ def main():
     _card_h = "min-height:120px;"
     with c1:
         st.markdown(f"""<div class='dc' style='border-top:3px solid {CY};{_card_h}'>
-            <div class='kl' style='color:{CY};'>SELECCIONADOS</div>
+            <div class='kl' style='color:{CY};'>AF Seleccionados</div>
             <div style='display:flex;align-items:baseline;gap:8px;margin-top:8px;'>
                 <div class='kv' style='font-size:2rem;color:{CY};'>{post_total}</div>
                 <span style='font-size:.7rem;color:{TD};'>/ {META} AF · {pct_post}%</span>
@@ -1352,7 +1354,7 @@ def main():
                 f"</div>"
             )
         st.markdown(f"""<div class='dc' style='border-top:3px solid {GN};{_card_h}'>
-            <div class='kl' style='color:{GN};'>VINCULADOS</div>
+            <div class='kl' style='color:{GN};'>AF Vinculados</div>
             <div style='display:flex;align-items:baseline;gap:8px;margin-top:8px;'>
                 <div class='kv' style='font-size:2rem;'>{contr}</div>
                 <span style='font-size:.7rem;color:{TD};'>/ {META} AF · {pct_contr}%</span>
@@ -1383,7 +1385,7 @@ def main():
             show_detail_vinculados(mf, af_filtered if not df_af.empty and "AF_CONTRATADO" in df_af.columns else None)
     with c3:
         st.markdown(f"""<div class='dc' style='border-top:3px solid {MG};{_card_h}'>
-            <div class='kl' style='color:{MG};'>VACANTES CRÍTICAS</div>
+            <div class='kl' style='color:{MG};'>EE Vacantes</div>
             <div style='display:flex;align-items:baseline;gap:8px;margin-top:8px;'>
                 <div class='kv' style='font-size:2rem;color:{MG};'>{vac_criticas}</div>
                 <span style='font-size:.7rem;color:{TD};'>/ {actual_total_ee} EE · {pct_vc}%</span>
@@ -1396,7 +1398,7 @@ def main():
             show_detail_vacantes(mf, foc_filtered)
     with c4:
         st.markdown(f"""<div class='dc' style='border-top:3px solid {ACCENT};{_card_h}'>
-            <div class='kl' style='color:{ACCENT};'>EE IMPACTADOS</div>
+            <div class='kl' style='color:{ACCENT};'>EE con AF seleccionados</div>
             <div style='display:flex;align-items:baseline;gap:8px;margin-top:8px;'>
                 <div class='kv' style='font-size:2rem;color:{ACCENT};'>{ee_impacted}</div>
                 <span style='font-size:.7rem;color:{TD};'>/ {actual_total_ee} · {pct_ee}%</span>
@@ -1427,8 +1429,20 @@ def main():
                 <span class='badge-live' style='font-size:.55rem;padding:2px 8px;background:rgba(136,111,255,0.15);border:1px solid {ACCENT};border-radius:10px;color:{ACCENT};'>EN VIVO</span>
             </div>""", unsafe_allow_html=True)
             if not af.empty and "Marca Temporal" in af.columns:
+                # -- Gradient colors for recency (orange→dim over 5 cards) --
+                _grad_colors = [
+                    ("#FF9F1C", "rgba(255,159,28,0.12)", "0 0 12px rgba(255,159,28,0.35)"),  # 1st - bright orange
+                    ("#E08A18", "rgba(255,159,28,0.08)", "0 0 8px rgba(255,159,28,0.20)"),   # 2nd
+                    ("#B87014", "rgba(255,159,28,0.05)", "none"),                              # 3rd
+                    ("#8A5610", "rgba(255,159,28,0.03)", "none"),                              # 4th
+                    ("#5C3C0C", "rgba(255,159,28,0.01)", "none"),                              # 5th - almost gone
+                ]
+                _default_border = ACCENT
+                _default_bg = "transparent"
+                _default_shadow = "none"
+
                 html_items = ""
-                for _, row in af.head(25).iterrows():
+                for idx, (_, row) in enumerate(af.head(25).iterrows()):
                     ts = row.get("Marca Temporal", pd.NaT)
                     ts_str = ts.strftime("%d/%m %I:%M %p") if pd.notna(ts) and hasattr(ts, 'strftime') else "Reciente"
                     ee = str(row.get("EE","")).strip()[:30]
@@ -1436,7 +1450,14 @@ def main():
                     b = int(row.get("Asistentes", 0))
                     ci = str(row.get("CI_ATT","")) if "CI_ATT" in af.columns else ""
                     ci_str = f" · {ci}" if ci and ci != "nan" else ""
-                    html_items += f"""<div class='pc'>
+
+                    # Apply gradient for first 5 items only
+                    if idx < len(_grad_colors):
+                        _bdr, _bg, _shd = _grad_colors[idx]
+                    else:
+                        _bdr, _bg, _shd = _default_border, _default_bg, _default_shadow
+
+                    html_items += f"""<div class='pc' style='border-left:3px solid {_bdr};background:{_bg};box-shadow:{_shd};'>
                         <div class='pc-body'>
                             <div class='pc-t'>⏱ {ts_str}{ci_str}</div>
                             <div class='pc-e'>{ee}</div>
@@ -1447,7 +1468,35 @@ def main():
                             <div style='font-size:.55rem;color:{TD};'>BENEF.</div>
                         </div>
                     </div>"""
-                st.markdown(f"<div class='pulse-wrap'><div class='pulse-track'>{html_items}{html_items}</div></div>", unsafe_allow_html=True)
+
+                # Drag-to-scroll JavaScript
+                _drag_js = """
+                <script>
+                (function(){
+                    const wraps = window.parent.document.querySelectorAll('.pulse-wrap');
+                    wraps.forEach(wrap => {
+                        if(wrap._dragInit) return;
+                        wrap._dragInit = true;
+                        let isDown = false, startY, scrollTop;
+                        wrap.style.overflowY = 'hidden';
+                        wrap.addEventListener('mousedown', e => {
+                            isDown = true; wrap.classList.add('is-dragging');
+                            startY = e.pageY - wrap.offsetTop;
+                            scrollTop = wrap.scrollTop;
+                        });
+                        wrap.addEventListener('mouseleave', () => { isDown = false; wrap.classList.remove('is-dragging'); });
+                        wrap.addEventListener('mouseup', () => { isDown = false; wrap.classList.remove('is-dragging'); });
+                        wrap.addEventListener('mousemove', e => {
+                            if(!isDown) return; e.preventDefault();
+                            const y = e.pageY - wrap.offsetTop;
+                            wrap.scrollTop = scrollTop - (y - startY);
+                        });
+                    });
+                })();
+                </script>
+                """
+
+                st.markdown(f"<div class='pulse-wrap'><div class='pulse-track'>{html_items}{html_items}</div></div>{_drag_js}", unsafe_allow_html=True)
             else:
                 st.markdown(f"<div style='color:{TD};padding:20px;text-align:center;'>Esperando registros...</div>", unsafe_allow_html=True)
             st.markdown("</div>", unsafe_allow_html=True)
@@ -1541,7 +1590,7 @@ def main():
                     <hr style='border:0;border-top:1px solid rgba(255,255,255,0.1);margin:6px 0;'/>
                     <div style='display:flex;justify-content:space-between;'><span>📋 Seleccionados:</span><b>{POS}</b></div>
                     <div style='display:flex;justify-content:space-between;'><span>✅ Vinculados:</span><b>{CON}</b></div>
-                    <div style='display:flex;justify-content:space-between;'><span>🚨 V. Críticas:</span><b>{VAC_CRIT}</b></div>
+                    <div style='display:flex;justify-content:space-between;'><span>🚨 Vacantes:</span><b>{VAC_CRIT}</b></div>
                     <div style='display:flex;justify-content:space-between;border-top:1px solid rgba(255,255,255,0.05);margin-top:4px;padding-top:4px;'><span>📊 Beneficiarios:</span><b>{BENEF}</b></div>
                 </div>""", "style": {"background": "#0f0f1a", "color": "#fff", "border": f"1px solid {BDR}", "border-radius": "12px"}}
 
@@ -1603,31 +1652,33 @@ def main():
                     display:inline-flex;align-items:center;justify-content:center;'>
                     <div style='width:10px;height:10px;border-radius:50%;background:{MG};'></div>
                 </div>
-                <div style='font-size:.68rem;font-weight:600;color:{MG};margin-top:4px;letter-spacing:.5px;'>V.Crít.</div>
+                <div style='font-size:.68rem;font-weight:600;color:{MG};margin-top:4px;letter-spacing:.5px;'>Vacantes</div>
             </div>""", unsafe_allow_html=True)
 
         st.markdown("<div style='height:6px'></div>", unsafe_allow_html=True)
 
+        _loc_str = "Total Nacional" if sel_n == "📍 Todos los Nodos" and sel_m == "Todos los Municipios" else "Acorde a filtros"
+
         # -- BENEFICIARIOS card --
         st.markdown(f"""<div class='dc-sm' style='text-align:center;padding:14px;'>
             <div class='kl'>📊 Reporte de Asistencias</div>
-            <div class='kv' style='font-size:2rem;margin-top:6px;'>{benef_nac:,}</div>
-            <div style='color:{TD};font-size:.72rem;'>Total Nacional</div>
+            <div class='kv' style='font-size:2rem;margin-top:6px;'>{benef:,}</div>
+            <div style='color:{TD};font-size:.72rem;'>{_loc_str}</div>
         </div>""", unsafe_allow_html=True)
 
         # -- EE MAYOR IMPACTO card --
         st.markdown(f"""<div class='dc-sm' style='padding:14px;border-top:2px solid {GN};'>
             <div class='kl' style='color:{GN};'>🏆 EE MAYOR IMPACTO</div>
-            <div style='margin-top:6px;font-size:.78rem;font-weight:700;color:#fff;'>{str(top_ee_nac)[:35]}</div>
-            <div style='font-size:.68rem;color:{TD};margin-top:2px;'>📍 {top_loc_nac}</div>
-            <div style='font-family:JetBrains Mono;font-size:1rem;color:{GN};font-weight:800;margin-top:4px;'>{top_num_nac:,} Benef.</div>
+            <div style='margin-top:6px;font-size:.78rem;font-weight:700;color:#fff;'>{str(top_ee)[:35]}</div>
+            <div style='font-size:.68rem;color:{TD};margin-top:2px;'>📍 {top_loc}</div>
+            <div style='font-family:JetBrains Mono;font-size:1rem;color:{GN};font-weight:800;margin-top:4px;'>{top_num:,} Benef.</div>
         </div>""", unsafe_allow_html=True)
 
         # -- SESIONES card --
         st.markdown(f"""<div class='dc-sm' style='text-align:center;padding:14px;border-top:2px solid {OR};'>
             <div class='kl' style='color:{OR};'>📅 Momentos Pedagógicos</div>
-            <div class='kv' style='font-size:2rem;margin-top:6px;color:{OR};'>{sesiones_nac:,}</div>
-            <div style='color:{TD};font-size:.72rem;'>Registros en BD</div>
+            <div class='kv' style='font-size:2rem;margin-top:6px;color:{OR};'>{sesiones:,}</div>
+            <div style='color:{TD};font-size:.72rem;'>{_loc_str}</div>
         </div>""", unsafe_allow_html=True)
 
         # Radar Chart
@@ -1639,24 +1690,25 @@ def main():
     # ═══════════════════════════════════════════════════════════════════════
     # ROW 3: Bottom Tables & Charts
     # ═══════════════════════════════════════════════════════════════════════
-    b1, b2 = st.columns(2, gap="medium")
+    # b1, b2 = st.columns(2, gap="medium")
+    b_full = st.columns(1)[0]
 
-    with b1:
-        with st.expander("⚠️ Municipios con Necesidades de Vinculación", expanded=True):
-            if vac > 0:
-                vt = mf.groupby(["MUNICIPIO","NODO"]).agg(
-                    POSTULANTES=("STATUS",lambda x:(x=="POSTULANTE").sum()),
-                    VINCULADOS=("STATUS",lambda x:(x=="VINCULADO").sum()),
-                    VACANTES=("STATUS",lambda x:(x=="VACANTE").sum())
-                ).reset_index()
-                vt = vt[vt["VACANTES"]>0].sort_values("VACANTES",ascending=False)
-                vt["ESTADO"] = "🔴 Necesita"
-                st.markdown(dark_table(vt, max_h=350, num_cols=["POSTULANTES","VINCULADOS","VACANTES"],
-                    color_map={"POSTULANTES":CY,"VINCULADOS":GN,"VACANTES":MG,"MUNICIPIO":"#fff","NODO":ACCENT,"ESTADO":MG}), unsafe_allow_html=True)
-            else:
-                st.success("¡Todo cubierto! 🎉")
+    # with b1:
+    #     with st.expander("⚠️ Municipios con Necesidades de Vinculación", expanded=True):
+    #         if vac > 0:
+    #             vt = mf.groupby(["MUNICIPIO","NODO"]).agg(
+    #                 POSTULANTES=("STATUS",lambda x:(x=="POSTULANTE").sum()),
+    #                 VINCULADOS=("STATUS",lambda x:(x=="VINCULADO").sum()),
+    #                 VACANTES=("STATUS",lambda x:(x=="VACANTE").sum())
+    #             ).reset_index()
+    #             vt = vt[vt["VACANTES"]>0].sort_values("VACANTES",ascending=False)
+    #             vt["ESTADO"] = "🔴 Necesita"
+    #             st.markdown(dark_table(vt, max_h=350, num_cols=["POSTULANTES","VINCULADOS","VACANTES"],
+    #                 color_map={"POSTULANTES":CY,"VINCULADOS":GN,"VACANTES":MG,"MUNICIPIO":"#fff","NODO":ACCENT,"ESTADO":MG}), unsafe_allow_html=True)
+    #         else:
+    #             st.success("¡Todo cubierto! 🎉")
 
-    with b2:
+    with b_full:
         # Fase & Estacionalidad from attendance
         with st.expander("📊 Asistencia: Fase y Estacionalidad", expanded=True):
             if not af.empty:
@@ -1760,6 +1812,7 @@ def main():
         _benef_v_num   = _safe_int(met_summary.get("benef_validados"))
         _acplat_num    = _safe_int(met_summary.get("acuerdos_plataforma"))
         _benef_p_num   = _safe_int(met_summary.get("benef_plataforma"))
+        _acest_num     = _safe_int(met_summary.get("acuerdos_estimados"))
 
         # ── MAIN LAYOUT: Left KPI column + Right charts column ──
         col_kpi, col_charts = st.columns([1, 2.5], gap="medium")
@@ -1795,8 +1848,8 @@ def main():
         # ── RIGHT: Radar on top, Area chart + Progress bar on bottom ──
         with col_charts:
             # ── RADAR / SPIDER CHART ──
-            radar_axes = ["Sedes", "Acuerdos", "Centros", "Formadores", "Beneficiarios"]
-            radar_raw  = [_sedes_num, _acuerdos_num, _centros_num, _formad_num, _benef_v_num]
+            radar_axes = ["Sedes", "Acuerdos", "Centros", "Formadores", "Acuerdos Est."]
+            radar_raw  = [_sedes_num, _acuerdos_num, _centros_num, _formad_num, _acest_num]
 
             # Normalize to 0–100 for comparable display
             _max_val = max(radar_raw) if max(radar_raw) > 0 else 1
@@ -1821,7 +1874,7 @@ def main():
             ))
 
             # Trace 2: Plataforma overlay (cyan)
-            plat_raw  = [0, _acplat_num, 0, 0, _benef_p_num]
+            plat_raw  = [0, _acplat_num, 0, 0, 0]
             plat_norm = [round(v / _max_val * 100, 1) for v in plat_raw]
             plat_raw_c  = plat_raw  + [plat_raw[0]]
             plat_norm_c = plat_norm + [plat_norm[0]]
@@ -1867,35 +1920,79 @@ def main():
             sub_left, sub_right = st.columns([1.6, 1], gap="small")
 
             with sub_left:
-                # Area chart — Benef Validados, Acuerdos Plataforma, Benef Plataforma
-                area_cats   = ["Benef. Valid.", "Acuerdos Plat.", "Benef. Plat."]
-                area_vals   = [_benef_v_num, _acplat_num, _benef_p_num]
-                area_colors = [GN, MG, "#CC0066"]
+                # Line chart — Daily attendance with week navigation (log scale)
+                if not af.empty and "Marca Temporal" in af.columns:
+                    _af_ts = af.copy()
+                    _af_ts["_dt"] = _af_ts["Marca Temporal"]
+                    _af_ts = _af_ts.dropna(subset=["_dt"])
+                    _af_ts["_date"] = _af_ts["_dt"].dt.date
+                    _daily_all = _af_ts.groupby("_date")["Asistentes"].sum().reset_index()
+                    _daily_all.columns = ["Fecha", "Asistentes"]
+                    _daily_all = _daily_all.sort_values("Fecha")
 
-                fig_area = go.Figure()
-                for i, (cat, val, clr) in enumerate(zip(area_cats, area_vals, area_colors)):
-                    fig_area.add_trace(go.Scatter(
-                        x=[0, 1, 2], y=[0, val, val * 0.85],
-                        mode='lines', fill='tozeroy',
-                        fillcolor=f"rgba({int(clr[1:3],16)},{int(clr[3:5],16)},{int(clr[5:7],16)},0.12)",
-                        line=dict(color=clr, width=2),
-                        name=cat
-                    ))
+                    if not _daily_all.empty:
+                        # Build week options based on available data
+                        from datetime import timedelta
+                        _max_date = _daily_all["Fecha"].max()
+                        _weeks_available = []
+                        for w in range(8):  # up to 8 weeks back
+                            _end = _max_date - timedelta(days=7 * w)
+                            _start = _end - timedelta(days=6)
+                            _chunk = _daily_all[(_daily_all["Fecha"] >= _start) & (_daily_all["Fecha"] <= _end)]
+                            if not _chunk.empty:
+                                if w == 0:
+                                    _label = f"Semana actual ({_start.strftime('%d/%m')} – {_end.strftime('%d/%m')})"
+                                else:
+                                    _label = f"Hace {w} sem. ({_start.strftime('%d/%m')} – {_end.strftime('%d/%m')})"
+                                _weeks_available.append((_label, _start, _end))
 
-                fig_area.update_layout(
-                    paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-                    margin=dict(l=5, r=5, t=10, b=5), height=180,
-                    font=dict(family="Inter", color=TD, size=10),
-                    showlegend=True,
-                    hoverlabel=dict(bgcolor=CARD2, font_size=12, font_family="Inter", font_color="#fff"),
-                    legend=dict(font=dict(size=8, color=TD), orientation="h",
-                                x=0.5, xanchor="center", y=-0.15,
-                                bgcolor="rgba(0,0,0,0)"),
-                    xaxis=dict(visible=False),
-                    yaxis=dict(showgrid=True, gridcolor="rgba(255,255,255,0.04)",
-                               zeroline=False, tickfont=dict(size=8, color=TD))
-                )
-                st.plotly_chart(fig_area, use_container_width=True, config={"displayModeBar": False})
+                        _sel_week = st.selectbox("📅", [w[0] for w in _weeks_available],
+                                                  label_visibility="collapsed", key="sel_week_chart") if _weeks_available else None
+
+                        if _sel_week and _weeks_available:
+                            _chosen = next((w for w in _weeks_available if w[0] == _sel_week), _weeks_available[0])
+                            _ws, _we = _chosen[1], _chosen[2]
+                            _daily = _daily_all[(_daily_all["Fecha"] >= _ws) & (_daily_all["Fecha"] <= _we)].copy()
+                        else:
+                            _daily = _daily_all.tail(7).copy()
+
+                        # Spanish day names from Python's correct weekday()
+                        _day_es = {0:"Lun",1:"Mar",2:"Mié",3:"Jue",4:"Vie",5:"Sáb",6:"Dom"}
+                        _daily["Label"] = _daily["Fecha"].apply(
+                            lambda d: f"{_day_es.get(d.weekday(),'')} {d.strftime('%d/%m')}"
+                        )
+
+                        fig_line = go.Figure()
+                        fig_line.add_trace(go.Scatter(
+                            x=_daily["Label"], y=_daily["Asistentes"],
+                            mode='lines+markers',
+                            line=dict(color=OR, width=2.5, shape='spline'),
+                            marker=dict(size=7, color=OR, line=dict(width=1.5, color="#fff")),
+                            fill='tozeroy',
+                            fillcolor="rgba(255,159,28,0.08)",
+                            name="Asistencia diaria",
+                            hovertemplate="<b>%{x}</b><br>Asistentes: %{y:,}<extra></extra>"
+                        ))
+                        fig_line.update_layout(
+                            paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
+                            margin=dict(l=5, r=5, t=25, b=5), height=165,
+                            font=dict(family="Inter", color=TD, size=10),
+                            showlegend=False,
+                            title=dict(text="📈 Asistencia Diaria",
+                                       font=dict(size=10, color=TD), x=0.5, xanchor="center"),
+                            hoverlabel=dict(bgcolor=CARD2, font_size=12, font_family="Inter", font_color="#fff"),
+                            xaxis=dict(showgrid=False, tickfont=dict(size=8, color=TD),
+                                       tickangle=-30),
+                            yaxis=dict(type="log", showgrid=True,
+                                       gridcolor="rgba(255,255,255,0.06)",
+                                       zeroline=False, tickfont=dict(size=8, color=TD),
+                                       title=None)
+                        )
+                        st.plotly_chart(fig_line, use_container_width=True, config={"displayModeBar": False})
+                    else:
+                        st.markdown(f"<div style='color:{TD};padding:20px;text-align:center;font-size:.8rem;'>Sin datos de asistencia temporal</div>", unsafe_allow_html=True)
+                else:
+                    st.markdown(f"<div style='color:{TD};padding:20px;text-align:center;font-size:.8rem;'>Sin datos de asistencia temporal</div>", unsafe_allow_html=True)
 
             with sub_right:
                 # Neon progress bar — % Acuerdos Cobertura
@@ -1936,10 +2033,10 @@ def main():
 
     # Build the data dict for the report
     report_kpis = [
-        {"label": "SELECCIONADOS",     "value": f"{post_total:,}", "sub": f"/ {META} AF - {pct_post}%", "pct": pct_post},
-        {"label": "VINCULADOS",       "value": f"{contr:,}",      "sub": f"/ {META} AF - {pct_contr}%", "pct": pct_contr},
-        {"label": "VACANTES CRITICAS", "value": f"{vac_criticas:,}", "sub": f"/ {actual_total_ee} EE - {pct_vc}%", "pct": pct_vc},
-        {"label": "EE IMPACTADOS",     "value": f"{ee_impacted:,}", "sub": f"/ {actual_total_ee} - {pct_ee}%", "pct": pct_ee},
+        {"label": "AF SELECCIONADOS",     "value": f"{post_total:,}", "sub": f"/ {META} AF - {pct_post}%", "pct": pct_post},
+        {"label": "AF VINCULADOS",       "value": f"{contr:,}",      "sub": f"/ {META} AF - {pct_contr}%", "pct": pct_contr},
+        {"label": "EE VACANTES",          "value": f"{vac_criticas:,}", "sub": f"/ {actual_total_ee} EE - {pct_vc}%", "pct": pct_vc},
+        {"label": "EE CON AF SELEC.",     "value": f"{ee_impacted:,}", "sub": f"/ {actual_total_ee} - {pct_ee}%", "pct": pct_ee},
     ]
     report_extra = [
         {"label": "BENEFICIARIOS", "value": f"{benef:,}", "sub": "Total Nacional", "color": (136, 111, 255)},
@@ -1965,12 +2062,11 @@ def main():
         _a_num = _safe_int_r(met_summary.get("acuerdos_cobertura"))
         _c_num = _safe_int_r(met_summary.get("centros_proyectados"))
         _f_num = _safe_int_r(met_summary.get("formadores_activos"))
-        _bv_num = _safe_int_r(met_summary.get("benef_validados"))
+        _ae_num = _safe_int_r(met_summary.get("acuerdos_estimados"))
         _ap_num = _safe_int_r(met_summary.get("acuerdos_plataforma"))
-        _bp_num = _safe_int_r(met_summary.get("benef_plataforma"))
 
-        r_axes = ["Sedes", "Acuerdos", "Centros", "Formadores", "Beneficiarios"]
-        r_raw  = [_s_num, _a_num, _c_num, _f_num, _bv_num]
+        r_axes = ["Sedes", "Acuerdos", "Centros", "Formadores", "Acuerdos Est."]
+        r_raw  = [_s_num, _a_num, _c_num, _f_num, _ae_num]
         _mx = max(r_raw) if max(r_raw) > 0 else 1
         r_norm = [round(v / _mx * 100, 1) for v in r_raw]
         r_axes_c = r_axes + [r_axes[0]]
@@ -1985,7 +2081,7 @@ def main():
             name="Cobertura", customdata=r_raw_c,
             hovertemplate="%{theta}: %{customdata:,}<extra></extra>"
         ))
-        p_raw = [0, _ap_num, 0, 0, _bp_num]
+        p_raw = [0, _ap_num, 0, 0, 0]
         p_norm = [round(v / _mx * 100, 1) for v in p_raw]
         p_raw_c = p_raw + [p_raw[0]]
         p_norm_c = p_norm + [p_norm[0]]
@@ -2015,27 +2111,35 @@ def main():
                                         tickfont=dict(size=10, color=TW)))
         )
 
-        area_cats_r = ["Benef. Valid.", "Acuerdos Plat.", "Benef. Plat."]
-        area_vals_r = [_bv_num, _ap_num, _bp_num]
-        area_clrs_r = [GN, MG, "#CC0066"]
-        report_tablero_area = go.Figure()
-        for cat_r, val_r, clr_r in zip(area_cats_r, area_vals_r, area_clrs_r):
+        # Daily attendance line chart for report (same as dashboard)
+        report_tablero_area = None
+        if not af.empty and "Marca Temporal" in af.columns:
+            _af_ts_r = af.copy()
+            _af_ts_r["_dt"] = _af_ts_r["Marca Temporal"]
+            _af_ts_r = _af_ts_r.dropna(subset=["_dt"])
+            _af_ts_r["_date"] = _af_ts_r["_dt"].dt.date
+            _daily_r = _af_ts_r.groupby("_date")["Asistentes"].sum().reset_index()
+            _daily_r.columns = ["Fecha", "Asistentes"]
+            _daily_r = _daily_r.sort_values("Fecha").tail(7)
+            _day_labels_r = {0:"Lun",1:"Mar",2:"Mié",3:"Jue",4:"Vie",5:"Sáb",6:"Dom"}
+            _daily_r["Label"] = _daily_r["Fecha"].apply(lambda d: f"{_day_labels_r.get(d.weekday(),'')} {d.strftime('%d/%m')}")
+            report_tablero_area = go.Figure()
             report_tablero_area.add_trace(go.Scatter(
-                x=[0, 1, 2], y=[0, val_r, val_r * 0.85],
-                mode='lines', fill='tozeroy',
-                fillcolor=f"rgba({int(clr_r[1:3],16)},{int(clr_r[3:5],16)},{int(clr_r[5:7],16)},0.12)",
-                line=dict(color=clr_r, width=2), name=cat_r
+                x=_daily_r["Label"], y=_daily_r["Asistentes"],
+                mode='lines+markers', line=dict(color=OR, width=2.5, shape='spline'),
+                marker=dict(size=7, color=OR), fill='tozeroy',
+                fillcolor="rgba(255,159,28,0.08)", name="Asistencia diaria"
             ))
-        report_tablero_area.update_layout(
-            paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-            margin=dict(l=5, r=5, t=10, b=5), height=180,
-            font=dict(family="Inter", color=TD, size=10), showlegend=True,
-            legend=dict(font=dict(size=8, color=TD), orientation="h",
-                        x=0.5, xanchor="center", y=-0.15, bgcolor="rgba(0,0,0,0)"),
-            xaxis=dict(visible=False),
-            yaxis=dict(showgrid=True, gridcolor="rgba(255,255,255,0.04)",
-                       zeroline=False, tickfont=dict(size=8, color=TD))
-        )
+            report_tablero_area.update_layout(
+                paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
+                margin=dict(l=5, r=5, t=25, b=5), height=180,
+                font=dict(family="Inter", color=TD, size=10), showlegend=False,
+                title=dict(text="📈 Asistencia Diaria (Últimos 7 días)",
+                           font=dict(size=10, color=TD), x=0.5, xanchor="center"),
+                xaxis=dict(showgrid=False, tickfont=dict(size=8, color=TD), tickangle=-30),
+                yaxis=dict(type="log", showgrid=True, gridcolor="rgba(255,255,255,0.06)",
+                           zeroline=False, tickfont=dict(size=8, color=TD))
+            )
 
     # Assemble the full data dict
     report_data = {
