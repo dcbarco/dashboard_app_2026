@@ -767,7 +767,7 @@ def show_detail_vinculados(mf_data, df_af_filtered=None):
     if use_af:
         contr_df = df_af_filtered[df_af_filtered["AF_CONTRATADO"]].copy()
     else:
-        contr_df = mf_data[mf_data["STATUS"]=="CONTRATADO"]
+        contr_df = mf_data[mf_data["STATUS"]=="VINCULADO"]
 
     c1, c2 = st.columns([2, 1])
     with c1:
@@ -1022,7 +1022,7 @@ def show_detail_vacantes(mf_data, df_foc=None):
 
 @st.dialog("📋 Detalle de AF Seleccionados", width="large")
 def show_detail_postulantes(mf_data):
-    post_df = mf_data[mf_data["STATUS"]=="POSTULANTE"]
+    post_df = mf_data[mf_data["HAS_M"]==True]
     
     c1, c2 = st.columns([2, 1])
     with c1:
@@ -1223,8 +1223,8 @@ def main():
             summary_val = af_contrat_summary.get("legalizados", 0)
             if summary_val > 0:
                 contr = summary_val
-    post_total = post + contr  # Seleccionados incluyen vinculados
-    filled = post + contr  # total filled positions (for gauge)
+    post_total = len(mf[mf["HAS_M"] == True])  # Seleccionados se basan estrictamente en la columna ESTADO (M)
+    filled = post_total  # Total de posiciones cubiertas (por selección o vinculación)
     vac   = len(mf[mf["STATUS"]=="VACANTE"])
     # Asistencia metrics: Filtered by NODO/MUNICIPIO
     benef = int(af["Asistentes"].sum()) if not af.empty else 0
@@ -1596,7 +1596,59 @@ def main():
 
                 layers = [border_layer]
                 if point_layer: layers.append(point_layer)
+
+                # ── Pulse Glow Layer: 5 most recent attendance reports ──
+                if not af.empty and "Municipio" in af.columns and not agg.empty:
+                    _recent_5 = af.head(5)
+                    _pulse_coords = []
+                    for _, _rr in _recent_5.iterrows():
+                        _rmun = str(_rr.get("Municipio", "")).strip().title()
+                        _match = agg[agg["MUN"] == _rmun]
+                        if not _match.empty:
+                            _pulse_coords.append({
+                                "LAT": float(_match.iloc[0]["LAT"]),
+                                "LON": float(_match.iloc[0]["LON"]),
+                            })
+                    if _pulse_coords:
+                        _pulse_df = pd.DataFrame(_pulse_coords)
+                        # 3 concentric rings: outer → inner (increasing opacity, decreasing radius)
+                        _rings = [
+                            (55000, 18, 18, 50),   # outer:  large, very faint
+                            (30000, 14, 30, 60),   # middle: medium
+                            (12000, 10, 50, 80),   # inner:  small, brighter
+                        ]
+                        for _rad, _min_px, _max_px, _alpha in _rings:
+                            _rdf = _pulse_df.copy()
+                            _rdf["_RAD"] = _rad
+                            _rdf["_R"] = 255
+                            _rdf["_G"] = 159
+                            _rdf["_B"] = 28
+                            _rdf["_A"] = _alpha
+                            layers.append(pdk.Layer(
+                                "ScatterplotLayer", data=_rdf,
+                                get_position=["LON", "LAT"],
+                                get_fill_color=["_R", "_G", "_B", "_A"],
+                                get_radius="_RAD",
+                                radius_min_pixels=_min_px,
+                                radius_max_pixels=_max_px,
+                                pickable=False
+                            ))
+
                 st.pydeck_chart(pdk.Deck(layers=layers, initial_view_state=view, map_style="dark", tooltip=tooltip), use_container_width=True)
+
+                # Inject CSS animation to pulse the glow layers
+                st.markdown("""
+                <style>
+                @keyframes pulseGlow {
+                    0%, 100% { opacity: 1; }
+                    50% { opacity: 0.3; }
+                }
+                /* Target pydeck canvas container — animate glow */
+                iframe[title="streamlit_pydeck_chart"] {
+                    animation: pulseGlow 2.5s ease-in-out infinite;
+                }
+                </style>
+                """, unsafe_allow_html=True)
             else:
                 st.warning("Sin coordenadas para mostrar en el mapa")
 
