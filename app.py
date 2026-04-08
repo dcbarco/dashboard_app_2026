@@ -163,6 +163,14 @@ def load_data():
         except:
             try: df_met_raw = conn.read(spreadsheet=URL_MET, header=None)
             except: pass
+            
+        # NEW: Load "Beneficiarios cargados en plataforma" from specified Google Sheet
+        df_benef_cargados = pd.DataFrame()
+        try:
+            URL_BENEF = "https://docs.google.com/spreadsheets/d/1VjXPnI1_K1VyEyf_OKl5sOcCwCK3cJgzsbm47llKUvY/edit?gid=0#gid=0"
+            df_benef_cargados = conn.read(spreadsheet=URL_BENEF, header=None)
+        except: pass
+
         if not dm.empty: src = "LIVE"
     except Exception as e:
         err = str(e)
@@ -240,6 +248,18 @@ def load_data():
 
             # Clean: remove None entries
             met_summary = {k: v for k, v in met_summary.items() if v is not None}
+
+            # Extract cell I902 equivalent dynamically from df_benef_cargados
+            try:
+                if not df_benef_cargados.empty:
+                    match_mask = df_benef_cargados.apply(lambda col: col.astype(str).str.strip().str.upper() == "TOTAL")
+                    if match_mask.any().any():
+                        row_idx = match_mask.any(axis=1).idxmax()
+                        v = df_benef_cargados.loc[row_idx, 8]
+                        if pd.notna(v) and str(v).strip() != "":
+                            met_summary["benef_cargados_plataforma_nuevo"] = pd.to_numeric(str(v).replace(",", "").strip(), errors="coerce")
+            except:
+                pass
 
             # Per-NODO table: find header row containing "ESTIMADOS"
             r_header = _find_row(df_met_raw, "ESTIMADOS")
@@ -1880,6 +1900,17 @@ def main():
                 <div class='kv' style='font-size:1.8rem;color:{GN};margin-top:4px;
                     text-shadow:0 0 16px rgba(0,255,128,0.25);'>{_benef_val}</div>
                 <div style='font-size:.55rem;color:{TD};margin-top:2px;'>Cifra acumulada nacional</div>
+            </div>""", unsafe_allow_html=True)
+
+            # ★ NEW CARD: Beneficiarios cargados en plataforma
+            _benef_cargados_nuevo = _safe_fmt(met_summary.get("benef_cargados_plataforma_nuevo", 0))
+            if _benef_cargados_nuevo == "-":
+                _benef_cargados_nuevo = "0"
+            st.markdown(f"""<div class='dc' style='border-left:3px solid {CY};
+                padding:14px 16px;margin-bottom:8px;'>
+                <div class='kl' style='color:{CY};font-size:.62rem;'>Beneficiarios cargados en plataforma</div>
+                <div class='kv' style='font-size:1.8rem;color:{CY};margin-top:4px;'>{_benef_cargados_nuevo}</div>
+                <div style='font-size:.58rem;color:{TD};margin-top:2px;'>Registros UCALDAS 2026</div>
             </div>""", unsafe_allow_html=True)
 
             _kpi_data = [
