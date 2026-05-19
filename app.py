@@ -25,7 +25,7 @@ MG          = "#FF0080"
 CY          = "#00D4FF"
 OR          = "#FF9F1C"
 LOGO        = "https://ia903209.us.archive.org/35/items/id-general-textura-blanco/ID_General_Textura_Blanco.png"
-META        = 803
+META        = 926
 TOTAL_EE    = 549
 CI_CATS     = ["MÚSICA","DANZA","ESCRITURA CREATIVA","TEATRO","AUDIOVISUAL"]
 
@@ -1903,14 +1903,23 @@ def main():
             </div>""", unsafe_allow_html=True)
 
             # ★ NEW CARD: Beneficiarios cargados en plataforma
-            _benef_cargados_nuevo = _safe_fmt(met_summary.get("benef_cargados_plataforma_nuevo", 0))
-            if _benef_cargados_nuevo == "-":
-                _benef_cargados_nuevo = "0"
+            _benef_plat_val = _benef_p_num
+            _benef_plat_fmt = _benef_plat
+            if str(_benef_plat_fmt) == "-":
+                _benef_plat_fmt = "0"
+                _benef_plat_val = 0
+            
+            _meta_benef = 70200
+            _pct_benef = (_benef_plat_val / _meta_benef * 100) if _meta_benef > 0 else 0
+            
             st.markdown(f"""<div class='dc' style='border-left:3px solid {CY};
                 padding:14px 16px;margin-bottom:8px;'>
                 <div class='kl' style='color:{CY};font-size:.62rem;'>Beneficiarios cargados en plataforma</div>
-                <div class='kv' style='font-size:1.8rem;color:{CY};margin-top:4px;'>{_benef_cargados_nuevo}</div>
-                <div style='font-size:.58rem;color:{TD};margin-top:2px;'>Registros UCALDAS 2026</div>
+                <div style='display:flex;align-items:baseline;gap:8px;margin-top:4px;'>
+                    <div class='kv' style='font-size:1.8rem;color:{CY};'>{_benef_plat_fmt}</div>
+                    <div style='font-size:1rem;color:{CY};font-weight:700;'>({_pct_benef:.1f}%)</div>
+                </div>
+                <div style='font-size:.58rem;color:{TD};margin-top:2px;'>Registros UCALDAS 2026 (Meta: 70.200)</div>
             </div>""", unsafe_allow_html=True)
 
             _kpi_data = [
