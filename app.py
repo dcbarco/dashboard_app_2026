@@ -277,8 +277,8 @@ def load_data():
     return _proc(dm, da, df_foc, df_af, src, err, met_summary, df_met_nodos, df_af_raw)
 
 def _proc(dm, da, df_foc, df_af, src, err, met_summary=None, df_met_nodos=None, df_af_raw=None):
-    dm.columns = dm.columns.str.strip()
-    dm = dm.loc[:, ~dm.columns.str.startswith("Unnamed")]
+    dm.columns = dm.columns.astype(str).str.strip()
+    dm = dm.loc[:, ~dm.columns.str.startswith("Unnamed") & (dm.columns != "nan")]
 
     # ── Process ARTISTAS FORMADORES (new CONTRATADOS source) ──
     # Match by CEDULA: AF has CEDULA + ESTADO CONTRATACIÓN, DM has CEDULA + DANE + EE
@@ -320,7 +320,7 @@ def _proc(dm, da, df_foc, df_af, src, err, met_summary=None, df_met_nodos=None, 
 
     # Priority 2: Label-based scan if direct access failed or partial
     if not df_af.empty:
-        df_af.columns = df_af.columns.str.strip()
+        df_af.columns = df_af.columns.astype(str).str.strip()
         all_totals = []
         for col_idx, col in enumerate(df_af.columns):
             if col_idx + 1 >= len(df_af.columns):
@@ -350,8 +350,8 @@ def _proc(dm, da, df_foc, df_af, src, err, met_summary=None, df_met_nodos=None, 
         
         if "legalizados" in af_contrat_summary and "declinados" in af_contrat_summary:
             af_contrat_summary["total_legal"] = af_contrat_summary["legalizados"] + af_contrat_summary["declinados"]
-        # Now clean unnamed columns
-        df_af = df_af.loc[:, ~df_af.columns.str.startswith("Unnamed")]
+        # Now clean unnamed columns (and any NaN-headers converted to "nan")
+        df_af = df_af.loc[:, ~df_af.columns.str.startswith("Unnamed") & (df_af.columns != "nan")]
         # Find "Estado CONTRATACIÓN" column (column V)
         af_q_col = None
         for c in df_af.columns:
@@ -488,7 +488,8 @@ def gauge_chart(value, total, h=220):
 
 def single_gauge(value, total, color, label, h=160):
     """Single semi-circle gauge with percentage and label."""
-    pct = min(value/total*100, 100) if total else 0
+    real_pct = (value/total*100) if total else 0
+    pct = min(real_pct, 100)
     fig = go.Figure(go.Indicator(
         mode="gauge",
         value=pct,
@@ -501,7 +502,7 @@ def single_gauge(value, total, color, label, h=160):
         }
     ))
     fig.add_annotation(x=0.5, y=0.32,
-        text=f"<b>{pct:.1f}%</b>",
+        text=f"<b>{real_pct:.1f}%</b>",
         showarrow=False, font=dict(size=22, color=color, family="JetBrains Mono"))
     fig.add_annotation(x=0.5, y=0.12,
         text=label,
@@ -1262,8 +1263,10 @@ def main():
                 top_loc = f"{r.get('Municipio','')} · {r.get('Nodo','')}"
             except: pass
     pct = round(filled/META*100,1) if META else 0
-    pct_post = min(round(post_total/META*100,1), 100) if META else 0
-    pct_contr = min(round(contr/META*100,1), 100) if META else 0
+    pct_post = round(post_total/META*100,1) if META else 0
+    pct_contr = round(contr/META*100,1) if META else 0
+    pct_post_bar = min(pct_post, 100)
+    pct_contr_bar = min(pct_contr, 100)
 
     # EE Impactados & Vacantes Críticas using FOCALIZACION as canonical source
     ee_impacted = 0
@@ -1352,7 +1355,7 @@ def main():
                 <span style='font-size:.7rem;color:{TD};'>/ {META} AF · {pct_post}%</span>
             </div>
             <div style='margin-top:8px;height:5px;background:rgba(255,255,255,0.06);border-radius:3px;overflow:hidden;'>
-                <div style='width:{pct_post}%;height:100%;background:{CY};border-radius:3px;transition:width .4s;'></div>
+                <div style='width:{pct_post_bar}%;height:100%;background:{CY};border-radius:3px;transition:width .4s;'></div>
             </div>
         </div>""", unsafe_allow_html=True)
         if st.button("Ver detalle", key="btn_post_detail", use_container_width=True):
@@ -1380,7 +1383,7 @@ def main():
                 <span style='font-size:.7rem;color:{TD};'>/ {META} AF · {pct_contr}%</span>
             </div>
             <div style='margin-top:8px;height:5px;background:rgba(255,255,255,0.06);border-radius:3px;overflow:hidden;'>
-                <div style='width:{pct_contr}%;height:100%;background:{GN};border-radius:3px;transition:width .4s;'></div>
+                <div style='width:{pct_contr_bar}%;height:100%;background:{GN};border-radius:3px;transition:width .4s;'></div>
             </div>
             <details style='margin-top:10px;'>
                 <summary style='font-size:.6rem;color:{ACCENT};cursor:pointer;letter-spacing:.5px;
