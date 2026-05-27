@@ -16,3 +16,8 @@ Thumbs.db
 # Plotly/Kaleido temp files
 report_*.png
 artes_logo.png
+
+# Local exploration / debug scripts
+analyze_columns.py
+check_csv.py
+final_check.py

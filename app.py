@@ -1912,7 +1912,7 @@ def main():
                 _benef_plat_fmt = "0"
                 _benef_plat_val = 0
             
-            _meta_benef = 70200
+            _meta_benef = 82200
             _pct_benef = (_benef_plat_val / _meta_benef * 100) if _meta_benef > 0 else 0
             
             st.markdown(f"""<div class='dc' style='border-left:3px solid {CY};
@@ -1922,7 +1922,7 @@ def main():
                     <div class='kv' style='font-size:1.8rem;color:{CY};'>{_benef_plat_fmt}</div>
                     <div style='font-size:1rem;color:{CY};font-weight:700;'>({_pct_benef:.1f}%)</div>
                 </div>
-                <div style='font-size:.58rem;color:{TD};margin-top:2px;'>Registros UCALDAS 2026 (Meta: 70.200)</div>
+                <div style='font-size:.58rem;color:{TD};margin-top:2px;'>Registros UCALDAS 2026 (Meta: 82.200)</div>
             </div>""", unsafe_allow_html=True)
 
             _kpi_data = [
