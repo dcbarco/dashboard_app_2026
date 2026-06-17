@@ -437,7 +437,7 @@ class ReportPDF(FPDF):
             # KPI cards column (left side)
             kpi_items = [
                 ("SEDES ESTIMADAS",    _safe_fmt(met_summary.get("sedes_estimadas")),    "Total",     RGB_OR),
-                ("ACUERDOS COB. EST.", _safe_fmt(met_summary.get("acuerdos_estimados")), "Estimados", RGB_OR),
+                ("ACUERDOS DE COBERTURA ALCANZADOS", _safe_fmt(met_summary.get("acuerdos_estimados")), "Estimados", RGB_OR),
                 ("ACUERDOS COBERTURA", _safe_fmt(met_summary.get("acuerdos_cobertura")), "Global",    RGB_CY),
                 ("FORMADORES ACTIVOS", _safe_fmt(met_summary.get("formadores_activos")), "Activos",   RGB_GN),
                 ("CENTROS INT. PROY.", _safe_fmt(met_summary.get("centros_proyectados")),  "Plazas",  RGB_MG),
