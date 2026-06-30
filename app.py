@@ -1856,14 +1856,16 @@ def main():
         def _parse_pct(v):
             """Parse a percentage value to float (0-100 range)."""
             if v is None: return 0.0
-            if isinstance(v, (int, float)): return float(v) * 100 if float(v) < 1 else float(v)
+            if isinstance(v, (int, float)):
+                f = float(v)
+                return f * 100 if 0 < f <= 5.0 else f
             s_orig = str(v).strip()
             has_pct = "%" in s_orig
             s = s_orig.replace("%","").replace(",",".").strip()
             try:
                 f = float(s)
-                # Bare decimal without % sign (e.g. 0.0365 → 3.65%)
-                if f < 1 and not has_pct:
+                # Bare decimal without % sign (e.g. 0.0365 → 3.65%, 1.0 -> 100%)
+                if 0 < f <= 5.0 and not has_pct:
                     return f * 100
                 return f
             except: return 0.0
